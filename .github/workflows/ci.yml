@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-typecheck-build:
+    name: Lint / Typecheck / Build
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: rfp
+          POSTGRES_PASSWORD: rfp_local_dev
+          POSTGRES_DB: rfp_pulse
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U rfp -d rfp_pulse"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://rfp:rfp_local_dev@localhost:5432/rfp_pulse?schema=public
+      NEXTAUTH_SECRET: ci-secret-not-used
+      NEXTAUTH_URL: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm --filter @rfp-pulse/db generate
+
+      - name: Deploy migrations
+        run: pnpm --filter @rfp-pulse/db exec prisma migrate deploy
+
+      - name: Seed database
+        run: pnpm db:seed
+
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm build
+      - run: pnpm format:check

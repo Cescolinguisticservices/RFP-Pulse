@@ -1,0 +1,29 @@
+{
+  "name": "rfp-pulse",
+  "version": "0.1.0",
+  "private": true,
+  "description": "RFP Pulse — AI-driven multi-tenant RFP response management system",
+  "packageManager": "pnpm@9.15.1",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "build": "pnpm --filter @rfp-pulse/db build && pnpm -r --filter \"./apps/*\" build",
+    "dev": "pnpm -r --parallel --filter \"./apps/*\" dev",
+    "lint": "pnpm -r --parallel lint",
+    "typecheck": "pnpm -r --parallel typecheck",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "db:migrate": "pnpm --filter @rfp-pulse/db migrate:dev",
+    "db:generate": "pnpm --filter @rfp-pulse/db generate",
+    "db:seed": "pnpm --filter @rfp-pulse/db seed",
+    "db:reset": "pnpm --filter @rfp-pulse/db reset",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\""
+  },
+  "devDependencies": {
+    "prettier": "^3.3.3",
+    "typescript": "^5.5.4"
+  }
+}
