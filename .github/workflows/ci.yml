@@ -52,6 +52,9 @@ jobs:
       - name: Seed database
         run: pnpm db:seed
 
+      - name: Build shared db package (required for api/web typecheck)
+        run: pnpm --filter @rfp-pulse/db build
+
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm build

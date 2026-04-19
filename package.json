@@ -12,7 +12,7 @@
     "build": "pnpm --filter @rfp-pulse/db build && pnpm -r --filter \"./apps/*\" build",
     "dev": "pnpm -r --parallel --filter \"./apps/*\" dev",
     "lint": "pnpm -r --parallel lint",
-    "typecheck": "pnpm -r --parallel typecheck",
+    "typecheck": "pnpm --filter @rfp-pulse/db build && pnpm -r --parallel typecheck",
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
     "db:migrate": "pnpm --filter @rfp-pulse/db migrate:dev",
