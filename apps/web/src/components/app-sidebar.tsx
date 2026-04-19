@@ -1,6 +1,6 @@
 'use client';
 
-import { ClipboardList, LayoutDashboard, LogOut, Zap } from 'lucide-react';
+import { ClipboardList, LayoutDashboard, LogOut, Radar, UploadCloud, Zap } from 'lucide-react';
 import { signOut, useSession } from 'next-auth/react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -10,6 +10,8 @@ import { cn } from '@/lib/utils';
 const NAV_ITEMS = [
   { href: '/dashboard', label: 'Projects', icon: LayoutDashboard, testId: 'nav-dashboard' },
   { href: '/tasks', label: 'My Tasks', icon: ClipboardList, testId: 'nav-tasks' },
+  { href: '/uploads', label: 'Uploads', icon: UploadCloud, testId: 'nav-uploads' },
+  { href: '/competitors', label: 'Competitor Intel', icon: Radar, testId: 'nav-competitors' },
 ] as const;
 
 export function AppSidebar(): JSX.Element {

@@ -1,10 +1,12 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 
 import { DocumentKind, LLMProvider as LLMProviderEnum } from '@rfp-pulse/db';
 
+import { RagService } from '../ai/rag.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FoiaAnalyzerService } from './foia-analyzer.service';
 import { parseDocument } from './parsers/document-parser';
+import { chunkText } from './text-chunker';
 
 export interface UploadedFile {
   buffer: Buffer;
@@ -30,15 +32,20 @@ export interface UploadFoiaInput {
 
 @Injectable()
 export class IngestionService {
+  private readonly logger = new Logger(IngestionService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly foia: FoiaAnalyzerService,
+    private readonly rag: RagService,
   ) {}
 
   /**
    * Parses an uploaded RFP document (PDF/DOCX/XLSX/text), persists a
    * {@link Document} row carrying the extracted text (as a dev placeholder for
-   * the eventual S3 object key), and returns the document + extracted text.
+   * the eventual S3 object key), chunks the extracted text and embeds each
+   * chunk into `KnowledgeBaseEntry` so future RAG queries can retrieve it,
+   * and returns the document + extraction metadata.
    */
   async uploadRfp(input: UploadRfpInput) {
     const parsed = await parseDocument({
@@ -59,11 +66,49 @@ export class IngestionService {
       },
     });
 
+    const indexedChunks = await this.indexChunks({
+      tenantId: input.tenantId,
+      documentId: document.id,
+      filename: input.file.originalname,
+      text: parsed.text,
+    });
+
     return {
       document,
       extractedText: parsed.text,
       metadata: parsed.metadata,
+      indexedChunks,
     };
+  }
+
+  private async indexChunks(args: {
+    tenantId: string;
+    documentId: string;
+    filename: string;
+    text: string;
+  }): Promise<number> {
+    const chunks = chunkText(args.text);
+    if (chunks.length === 0) return 0;
+    const source = `document:${args.documentId}`;
+    let indexed = 0;
+    for (let i = 0; i < chunks.length; i += 1) {
+      const content = chunks[i];
+      const title = `${args.filename} — chunk ${i + 1}/${chunks.length}`;
+      try {
+        await this.rag.indexEntry({
+          tenantId: args.tenantId,
+          title,
+          content,
+          source,
+        });
+        indexed += 1;
+      } catch (err) {
+        this.logger.warn(
+          `Failed to index chunk ${i + 1}/${chunks.length} for document ${args.documentId}: ${(err as Error).message}`,
+        );
+      }
+    }
+    return indexed;
   }
 
   /**

@@ -78,6 +78,10 @@ describe('Ingestion endpoints (Step 4.20–4.24)', () => {
   afterAll(async () => {
     await prisma.competitorIntel.deleteMany({ where: { tenantId } });
     await prisma.document.deleteMany({ where: { tenantId } });
+    await prisma.$executeRawUnsafe(
+      'DELETE FROM knowledge_base_entries WHERE "tenantId" = $1',
+      tenantId,
+    );
     await prisma.user.deleteMany({ where: { tenantId } });
     await prisma.tenant.delete({ where: { id: tenantId } });
     await app.close();
@@ -112,12 +116,25 @@ describe('Ingestion endpoints (Step 4.20–4.24)', () => {
     });
     expect(res.body.preview).toContain('cloud security');
     expect(res.body.documentId).toEqual(expect.any(String));
+    expect(res.body.indexedChunks).toBeGreaterThan(0);
 
     const row = await prisma.document.findUnique({ where: { id: res.body.documentId } });
     expect(row).not.toBeNull();
     expect(row?.tenantId).toBe(tenantId);
     expect(row?.kind).toBe(DocumentKind.RFP);
     expect(row?.filename).toBe('rfp-sample.txt');
+
+    // Step 6a verification: uploaded text is chunked + embedded into the KB.
+    const kb = await prisma.$queryRawUnsafe<Array<{ count: number | string }>>(
+      `SELECT COUNT(*)::int AS count
+         FROM knowledge_base_entries
+        WHERE "tenantId" = $1 AND source = $2 AND embedding IS NOT NULL`,
+      tenantId,
+      `document:${res.body.documentId}`,
+    );
+    const count = Number(kb[0]?.count ?? 0);
+    expect(count).toBe(res.body.indexedChunks);
+    expect(count).toBeGreaterThanOrEqual(1);
   });
 
   it('parses Excel sheet names + rows', async () => {
