@@ -9,6 +9,7 @@ import { LLMProvider as LLMProviderEnum } from '@rfp-pulse/db';
 
 import { DraftAnswerService } from '../src/ai/draft-answer.service';
 import { createChatModel, providerNameFromEnum, type LLMProviderName } from '../src/ai/llm.factory';
+import { DeterministicMockChatModel } from '../src/ai/mock-chat-model';
 import { RagService, type RetrievedEntry } from '../src/ai/rag.service';
 
 describe('LLM Strategy factory (Step 3.16)', () => {
@@ -35,6 +36,28 @@ describe('LLM Strategy factory (Step 3.16)', () => {
     expect(() =>
       createChatModel({ provider: 'bogus' as unknown as LLMProviderName, apiKey }),
     ).toThrow(/Unknown LLM provider/);
+  });
+
+  it('falls back to the deterministic mock chat model when no API key is configured', () => {
+    const prior = {
+      OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+      GOOGLE_API_KEY: process.env.GOOGLE_API_KEY,
+      ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+      GROQ_API_KEY: process.env.GROQ_API_KEY,
+    };
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.GOOGLE_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.GROQ_API_KEY;
+    try {
+      const model = createChatModel({ provider: 'openai' });
+      expect(model).toBeInstanceOf(DeterministicMockChatModel);
+    } finally {
+      if (prior.OPENAI_API_KEY) process.env.OPENAI_API_KEY = prior.OPENAI_API_KEY;
+      if (prior.GOOGLE_API_KEY) process.env.GOOGLE_API_KEY = prior.GOOGLE_API_KEY;
+      if (prior.ANTHROPIC_API_KEY) process.env.ANTHROPIC_API_KEY = prior.ANTHROPIC_API_KEY;
+      if (prior.GROQ_API_KEY) process.env.GROQ_API_KEY = prior.GROQ_API_KEY;
+    }
   });
 });
 

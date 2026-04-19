@@ -6,6 +6,8 @@ import { ChatOpenAI } from '@langchain/openai';
 
 import { LLMProvider as LLMProviderEnum } from '@rfp-pulse/db';
 
+import { DeterministicMockChatModel } from './mock-chat-model';
+
 /**
  * Canonical, lowercase string name for an LLM provider. Accepted by the
  * factory so callers can forward values straight from config/UI forms without
@@ -41,6 +43,10 @@ export function createChatModel(opts: LLMFactoryOptions): BaseChatModel {
   const apiKey = opts.apiKey ?? apiKeyFromEnv(opts.provider);
   const temperature = opts.temperature ?? 0.2;
   const model = opts.model ?? DEFAULT_MODELS[opts.provider];
+
+  if (!apiKey) {
+    return new DeterministicMockChatModel(opts.provider);
+  }
 
   switch (opts.provider) {
     case 'openai':
