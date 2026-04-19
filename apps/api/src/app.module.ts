@@ -3,7 +3,9 @@ import { ConfigModule } from '@nestjs/config';
 
 import { AdminModule } from './admin/admin.module';
 import { AiModule } from './ai/ai.module';
+import { AnswersModule } from './answers/answers.module';
 import { AuthModule } from './auth/auth.module';
+import { CompetitorsModule } from './competitors/competitors.module';
 import { HealthController } from './health/health.controller';
 import { IngestionModule } from './ingestion/ingestion.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -20,6 +22,8 @@ import { QuestionsModule } from './questions/questions.module';
     AuthModule,
     AdminModule,
     AiModule,
+    AnswersModule,
+    CompetitorsModule,
     IngestionModule,
     ProjectsModule,
     QuestionsModule,

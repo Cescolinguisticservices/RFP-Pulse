@@ -43,14 +43,18 @@ export class QuestionsController {
     private readonly drafter: DraftAnswerService,
   ) {}
 
-  /** SME task list (Step 5.27): questions assigned to the caller, optionally filtered by state. */
+  /**
+   * SME task list (Step 5.27): questions assigned to the caller, optionally
+   * filtered by state. Pass `state=ALL` to disable the default DRAFTING filter
+   * and return every state the caller is entitled to see.
+   */
   @Get('mine')
   @Roles(Role.ADMIN, Role.RFP_MANAGER, Role.SME, Role.REVIEWER, Role.APPROVER)
   async mine(
     @CurrentUser() user: AuthenticatedUser,
     @Query('state') stateFilter?: string,
   ): Promise<{ questions: QuestionSummary[] }> {
-    const parsedState = parseStateFilter(stateFilter);
+    const parsedState: WorkflowState | 'ALL' | null = parseStateFilter(stateFilter);
 
     const rows = await this.prisma.rFPQuestion.findMany({
       where: {
@@ -85,7 +89,11 @@ export class QuestionsController {
             : null,
         };
       })
-      .filter((q) => (parsedState ? q.state === parsedState : q.state === WorkflowState.DRAFTING));
+      .filter((q) => {
+        if (parsedState === 'ALL') return true;
+        if (parsedState) return q.state === parsedState;
+        return q.state === WorkflowState.DRAFTING;
+      });
 
     return { questions };
   }
@@ -163,9 +171,10 @@ export class QuestionsController {
   }
 }
 
-function parseStateFilter(s: string | undefined): WorkflowState | null {
+function parseStateFilter(s: string | undefined): WorkflowState | 'ALL' | null {
   if (!s) return null;
   const upper = s.toUpperCase();
+  if (upper === 'ALL') return 'ALL';
   if (upper in WorkflowState) return upper as WorkflowState;
   return null;
 }

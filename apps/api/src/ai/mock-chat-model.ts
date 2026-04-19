@@ -28,6 +28,11 @@ export class DeterministicMockChatModel extends SimpleChatModel {
   async _call(messages: BaseMessage[]): Promise<string> {
     const human = messages[messages.length - 1];
     const prompt = typeof human?.content === 'string' ? human.content : '';
+
+    if (isFoiaPrompt(prompt)) {
+      return buildFoiaMockJson(prompt, this.providerLabel);
+    }
+
     const question = extractQuestion(prompt);
     const excerpts = extractExcerpts(prompt);
 
@@ -63,4 +68,32 @@ function extractExcerpts(prompt: string): string[] {
     .map((s) => s.trim())
     .filter((s) => s.length > 0)
     .slice(0, 3);
+}
+
+function isFoiaPrompt(prompt: string): boolean {
+  return (
+    prompt.includes('pricingModel') &&
+    prompt.includes('technicalStrategies') &&
+    prompt.includes('winThemes')
+  );
+}
+
+function buildFoiaMockJson(prompt: string, providerLabel: string): string {
+  const source = extractFoiaSource(prompt);
+  const preview = source.replace(/\s+/g, ' ').slice(0, 180);
+  const payload = {
+    pricingModel: `[mock ${providerLabel}] Pricing excerpt: ${preview}`,
+    technicalStrategies: `[mock ${providerLabel}] Technical strategies extracted from the document (stub). Configure a real provider API key to get a real analysis.`,
+    winThemes: `[mock ${providerLabel}] Win themes extracted from the document (stub). Configure a real provider API key to get a real analysis.`,
+  };
+  return JSON.stringify(payload);
+}
+
+function extractFoiaSource(prompt: string): string {
+  const header = 'Competitor proposal:';
+  const idx = prompt.indexOf(header);
+  if (idx === -1) return prompt.slice(0, 200);
+  const after = prompt.slice(idx + header.length);
+  const end = after.indexOf('\n\nRespond with');
+  return (end === -1 ? after : after.slice(0, end)).trim();
 }

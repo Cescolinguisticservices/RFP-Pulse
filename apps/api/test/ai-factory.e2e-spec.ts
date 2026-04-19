@@ -38,6 +38,27 @@ describe('LLM Strategy factory (Step 3.16)', () => {
     ).toThrow(/Unknown LLM provider/);
   });
 
+  it('returns valid FOIA JSON when the mock model sees the structured prompt', async () => {
+    const mock = new DeterministicMockChatModel('openai');
+    const { HumanMessage, SystemMessage } = await import('@langchain/core/messages');
+    const foiaPrompt = [
+      'You are a competitive-intelligence analyst. Extract pricing models, technical strategies, and win themes from the following competitor proposal.',
+      '',
+      'Competitor proposal:',
+      'Acme Rival Co charges $99/seat/month. Single-region deploy. Wins on low price.',
+      '',
+      'Respond with strict JSON matching this TypeScript type (no markdown, no prose):',
+      '{ "pricingModel": string, "technicalStrategies": string, "winThemes": string }',
+    ].join('\n');
+    const raw = await mock._call([new SystemMessage('sys'), new HumanMessage(foiaPrompt)]);
+    const parsed = JSON.parse(raw);
+    expect(parsed).toMatchObject({
+      pricingModel: expect.stringContaining('$99/seat'),
+      technicalStrategies: expect.any(String),
+      winThemes: expect.any(String),
+    });
+  });
+
   it('falls back to the deterministic mock chat model when no API key is configured', () => {
     const prior = {
       OPENAI_API_KEY: process.env.OPENAI_API_KEY,
