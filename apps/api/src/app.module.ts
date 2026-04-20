@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 
+import { AccountModule } from './account/account.module';
 import { AdminModule } from './admin/admin.module';
 import { AiModule } from './ai/ai.module';
 import { AnswersModule } from './answers/answers.module';
@@ -11,6 +12,8 @@ import { IngestionModule } from './ingestion/ingestion.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProjectsModule } from './projects/projects.module';
 import { QuestionsModule } from './questions/questions.module';
+import { TenantsModule } from './tenants/tenants.module';
+import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
@@ -20,6 +23,7 @@ import { QuestionsModule } from './questions/questions.module';
     }),
     PrismaModule,
     AuthModule,
+    AccountModule,
     AdminModule,
     AiModule,
     AnswersModule,
@@ -27,6 +31,8 @@ import { QuestionsModule } from './questions/questions.module';
     IngestionModule,
     ProjectsModule,
     QuestionsModule,
+    TenantsModule,
+    UsersModule,
   ],
   controllers: [HealthController],
 })

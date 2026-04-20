@@ -59,6 +59,7 @@ export const authOptions: AuthOptions = {
           role: user.role,
           tenantId: user.tenantId,
           tenantSlug: tenant.slug,
+          passwordMustChange: user.passwordMustChange,
         };
       },
     }),
@@ -76,6 +77,7 @@ export const authOptions: AuthOptions = {
         role: token?.role,
         tenantId: token?.tenantId,
         tenantSlug: token?.tenantSlug,
+        passwordMustChange: token?.passwordMustChange ?? false,
       };
       return jwt.sign(payload, secret as string, {
         algorithm: JWT_ALGORITHM,
@@ -98,13 +100,24 @@ export const authOptions: AuthOptions = {
     signIn: '/login',
   },
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger }) {
       if (user) {
         token.sub = user.id;
         token.email = user.email;
         token.role = user.role as Role;
         token.tenantId = user.tenantId;
         token.tenantSlug = user.tenantSlug;
+        token.passwordMustChange = user.passwordMustChange ?? false;
+      }
+      // Re-hydrate passwordMustChange + role from DB on session update so the
+      // force-change-password redirect clears after the user changes their
+      // temp password (or an admin edits their role).
+      if (trigger === 'update' && token.sub) {
+        const fresh = await prisma.user.findUnique({ where: { id: token.sub } });
+        if (fresh) {
+          token.role = fresh.role;
+          token.passwordMustChange = fresh.passwordMustChange;
+        }
       }
       return token;
     },
@@ -115,6 +128,7 @@ export const authOptions: AuthOptions = {
         session.user.role = token.role;
         session.user.tenantId = token.tenantId;
         session.user.tenantSlug = token.tenantSlug;
+        session.user.passwordMustChange = token.passwordMustChange ?? false;
       }
       // Re-sign the raw JWT so the client can send it as a Bearer token.
       session.accessToken = jwt.sign(
