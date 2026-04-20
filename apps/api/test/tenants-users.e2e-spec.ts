@@ -26,7 +26,13 @@ describe('Tenant + user management (Step 7)', () => {
 
   function signToken(userId: string, role: Role, tenantId: string, tenantSlug: string): string {
     return jwt.sign(
-      { sub: userId, email: `${role.toLowerCase()}@${tenantSlug}.test`, role, tenantId, tenantSlug },
+      {
+        sub: userId,
+        email: `${role.toLowerCase()}@${tenantSlug}.test`,
+        role,
+        tenantId,
+        tenantSlug,
+      },
       JWT_SECRET,
       { algorithm: 'HS256', expiresIn: '1h' },
     );
@@ -138,7 +144,11 @@ describe('Tenant + user management (Step 7)', () => {
         })
         .expect(201);
 
-      expect(res.body.tenant).toMatchObject({ name: 'New Company', slug, defaultProvider: 'CLAUDE' });
+      expect(res.body.tenant).toMatchObject({
+        name: 'New Company',
+        slug,
+        defaultProvider: 'CLAUDE',
+      });
       expect(res.body.initialAdmin.email).toBe('founder@newco.test');
       expect(res.body.tempPassword).toMatch(/^[A-Za-z0-9]{12,}$/);
 

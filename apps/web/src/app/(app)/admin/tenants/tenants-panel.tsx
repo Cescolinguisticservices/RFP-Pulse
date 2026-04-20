@@ -204,7 +204,9 @@ export function TenantsPanel({
               {tenants.map((t) => (
                 <TableRow key={t.id} data-testid={`tenant-row-${t.id}`}>
                   <TableCell className="font-medium">{t.name}</TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">{t.slug}</TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground">
+                    {t.slug}
+                  </TableCell>
                   <TableCell>{t.defaultProvider}</TableCell>
                   <TableCell className="text-xs text-muted-foreground">
                     {new Date(t.createdAt).toLocaleString()}

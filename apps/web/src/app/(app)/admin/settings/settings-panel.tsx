@@ -29,7 +29,9 @@ export function SettingsPanel({
   apiBase: string;
 }): JSX.Element {
   const [tenant, setTenant] = useState<TenantSummary>(initialTenant);
-  const [defaultProvider, setDefaultProvider] = useState<LLMProvider>(initialTenant.defaultProvider);
+  const [defaultProvider, setDefaultProvider] = useState<LLMProvider>(
+    initialTenant.defaultProvider,
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);

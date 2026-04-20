@@ -174,7 +174,11 @@ export function UsersPanel({
             </label>
             <div className="flex items-end md:col-span-4">
               <Button type="submit" disabled={busy} data-testid="invite-submit">
-                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
+                {busy ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <UserPlus className="h-4 w-4" />
+                )}
                 {busy ? 'Inviting…' : 'Invite'}
               </Button>
             </div>
