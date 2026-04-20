@@ -1,6 +1,6 @@
 'use client';
 
-import { Loader2, Plus } from 'lucide-react';
+import { Link2, Loader2, Plus } from 'lucide-react';
 import { useState } from 'react';
 
 import { LLMProvider } from '@rfp-pulse/db';
@@ -32,6 +32,13 @@ interface CreateTenantResult {
   tempPassword: string;
 }
 
+interface CreateInviteResult {
+  id: string;
+  token: string;
+  signupUrl: string;
+  expiresAt: string;
+}
+
 export function TenantsPanel({
   initialTenants,
   initialError,
@@ -54,6 +61,37 @@ export function TenantsPanel({
     adminName: '',
     defaultProvider: 'OPENAI' as LLMProvider,
   });
+  const [inviteForm, setInviteForm] = useState({ intendedCompany: '', intendedEmail: '' });
+  const [inviteBusy, setInviteBusy] = useState(false);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [lastInvite, setLastInvite] = useState<CreateInviteResult | null>(null);
+
+  async function onCreateInvite(e: React.FormEvent): Promise<void> {
+    e.preventDefault();
+    setInviteBusy(true);
+    setInviteError(null);
+    try {
+      const res = await fetch(`${apiBase}/api/tenant-invites`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(inviteForm),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { message?: string };
+        throw new Error(body.message ?? `Failed (${res.status})`);
+      }
+      const result = (await res.json()) as CreateInviteResult;
+      setLastInvite(result);
+      setInviteForm({ intendedCompany: '', intendedEmail: '' });
+    } catch (e) {
+      setInviteError(e instanceof Error ? e.message : 'Unknown error');
+    } finally {
+      setInviteBusy(false);
+    }
+  }
 
   async function onSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
@@ -89,8 +127,79 @@ export function TenantsPanel({
     }
   }
 
+  const signupOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+
   return (
     <div className="flex flex-col gap-6">
+      <Card data-testid="invite-card">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Link2 className="h-4 w-4" /> Create signup invite
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="mb-3 text-sm text-muted-foreground">
+            Generate a one-time signup link for a prospect. They pick their own company slug, admin
+            email, and password — no temp-password hand-off required. The link is single-use and
+            expires in 7 days.
+          </p>
+          <form onSubmit={onCreateInvite} className="grid gap-3 md:grid-cols-2">
+            <label className="flex flex-col gap-1 text-sm">
+              Prospect company (optional hint)
+              <Input
+                value={inviteForm.intendedCompany}
+                onChange={(e) => setInviteForm({ ...inviteForm, intendedCompany: e.target.value })}
+                data-testid="invite-company-input"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              Prospect email (optional hint)
+              <Input
+                type="email"
+                value={inviteForm.intendedEmail}
+                onChange={(e) => setInviteForm({ ...inviteForm, intendedEmail: e.target.value })}
+                data-testid="invite-email-input"
+              />
+            </label>
+            <div className="flex items-end md:col-span-2">
+              <Button type="submit" disabled={inviteBusy} data-testid="invite-submit">
+                {inviteBusy ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Link2 className="h-4 w-4" />
+                )}
+                {inviteBusy ? 'Creating…' : 'Generate signup link'}
+              </Button>
+            </div>
+          </form>
+          {inviteError && (
+            <p className="mt-3 text-xs text-destructive" data-testid="invite-error">
+              {inviteError}
+            </p>
+          )}
+          {lastInvite && (
+            <div
+              className="mt-4 rounded-md border border-sky-200 bg-sky-50 p-3 text-xs"
+              data-testid="invite-link-callout"
+            >
+              <p className="font-medium text-sky-900">
+                Signup link generated — share this URL once with the prospect:
+              </p>
+              <p
+                className="mt-1 break-all font-mono text-sm font-bold text-sky-950"
+                data-testid="invite-link-url"
+              >
+                {signupOrigin}
+                {lastInvite.signupUrl}
+              </p>
+              <p className="mt-1 text-sky-900">
+                Single-use. Expires {new Date(lastInvite.expiresAt).toLocaleString()}.
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       <Card data-testid="new-tenant-card">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">

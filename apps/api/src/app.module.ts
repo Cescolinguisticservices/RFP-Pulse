@@ -12,6 +12,7 @@ import { IngestionModule } from './ingestion/ingestion.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProjectsModule } from './projects/projects.module';
 import { QuestionsModule } from './questions/questions.module';
+import { TenantInvitesModule } from './tenant-invites/tenant-invites.module';
 import { TenantsModule } from './tenants/tenants.module';
 import { UsersModule } from './users/users.module';
 
@@ -31,6 +32,7 @@ import { UsersModule } from './users/users.module';
     IngestionModule,
     ProjectsModule,
     QuestionsModule,
+    TenantInvitesModule,
     TenantsModule,
     UsersModule,
   ],
