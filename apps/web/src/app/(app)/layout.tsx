@@ -14,6 +14,12 @@ export default async function AppLayout({
   if (!session) {
     redirect('/login?callbackUrl=/dashboard');
   }
+  // Force users invited with a temp password to change it before using the app.
+  // The change-password page lives outside the (app) group so this redirect
+  // doesn't loop.
+  if (session.user.passwordMustChange) {
+    redirect('/account/change-password');
+  }
 
   return (
     <AppSessionProvider session={session}>

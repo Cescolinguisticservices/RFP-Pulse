@@ -23,7 +23,26 @@ async function main(): Promise<void> {
     create: { name: 'Acme Proposals', slug: 'acme' },
   });
 
+  // Platform tenant hosts the SUPER_ADMIN user who can provision tenants.
+  const platformTenant = await prisma.tenant.upsert({
+    where: { slug: 'platform' },
+    update: {},
+    create: { name: 'RFP Pulse Platform', slug: 'platform' },
+  });
+
   const passwordHash = hashSync(DEMO_PASSWORD, BCRYPT_ROUNDS);
+
+  const superAdmin = await prisma.user.upsert({
+    where: { tenantId_email: { tenantId: platformTenant.id, email: 'super@rfp-pulse.test' } },
+    update: { role: Role.SUPER_ADMIN, passwordHash, passwordMustChange: false },
+    create: {
+      tenantId: platformTenant.id,
+      email: 'super@rfp-pulse.test',
+      name: 'Sam Super-Admin',
+      passwordHash,
+      role: Role.SUPER_ADMIN,
+    },
+  });
 
   const admin = await prisma.user.upsert({
     where: { tenantId_email: { tenantId: tenant.id, email: 'admin@acme.test' } },
@@ -135,6 +154,8 @@ async function main(): Promise<void> {
     JSON.stringify(
       {
         tenant: { id: tenant.id, slug: tenant.slug },
+        platformTenant: { id: platformTenant.id, slug: platformTenant.slug },
+        superAdmin: { id: superAdmin.id, email: superAdmin.email, role: superAdmin.role },
         admin: { id: admin.id, email: admin.email, role: admin.role },
         readOnly: { id: readOnly.id, email: readOnly.email, role: readOnly.role },
         projects: projects.map((p) => ({ id: p.id, title: p.title })),
