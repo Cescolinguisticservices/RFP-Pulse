@@ -77,6 +77,7 @@ export const authOptions: AuthOptions = {
         role: token?.role,
         tenantId: token?.tenantId,
         tenantSlug: token?.tenantSlug,
+        passwordMustChange: token?.passwordMustChange ?? false,
       };
       return jwt.sign(payload, secret as string, {
         algorithm: JWT_ALGORITHM,
