@@ -1,18 +1,18 @@
 /**
- * Seed the local database with a demo tenant, an admin user, and a dummy RFP
- * project. Safe to re-run (uses upserts).
+ * Seed the local database with a demo tenant, admin + read-only users, and a
+ * dummy RFP project. Safe to re-run (uses upserts). Passwords are hashed with
+ * bcrypt so NextAuth can authenticate them out of the box.
  *
  * Usage: `pnpm db:seed` from the repo root.
  */
+import { hashSync } from 'bcryptjs';
+
 import { PrismaClient, Role, WorkflowState } from '@prisma/client';
-import { createHash } from 'node:crypto';
 
 const prisma = new PrismaClient();
 
-function hashPassword(pw: string): string {
-  // Placeholder hash for seed data only. Real auth in Step 2 uses bcrypt/NextAuth.
-  return createHash('sha256').update(pw).digest('hex');
-}
+const DEMO_PASSWORD = 'password123';
+const BCRYPT_ROUNDS = 10;
 
 async function main(): Promise<void> {
   const tenant = await prisma.tenant.upsert({
@@ -24,17 +24,33 @@ async function main(): Promise<void> {
     },
   });
 
+  const passwordHash = hashSync(DEMO_PASSWORD, BCRYPT_ROUNDS);
+
   const admin = await prisma.user.upsert({
     where: {
       tenantId_email: { tenantId: tenant.id, email: 'admin@acme.test' },
     },
-    update: { role: Role.ADMIN },
+    update: { role: Role.ADMIN, passwordHash },
     create: {
       tenantId: tenant.id,
       email: 'admin@acme.test',
       name: 'Ada Admin',
-      passwordHash: hashPassword('password123'),
+      passwordHash,
       role: Role.ADMIN,
+    },
+  });
+
+  const readOnly = await prisma.user.upsert({
+    where: {
+      tenantId_email: { tenantId: tenant.id, email: 'readonly@acme.test' },
+    },
+    update: { role: Role.READ_ONLY, passwordHash },
+    create: {
+      tenantId: tenant.id,
+      email: 'readonly@acme.test',
+      name: 'Rory Read-Only',
+      passwordHash,
+      role: Role.READ_ONLY,
     },
   });
 
@@ -89,8 +105,10 @@ async function main(): Promise<void> {
       {
         tenant: { id: tenant.id, slug: tenant.slug },
         admin: { id: admin.id, email: admin.email, role: admin.role },
+        readOnly: { id: readOnly.id, email: readOnly.email, role: readOnly.role },
         project: { id: project.id, title: project.title },
         question: { id: question.id },
+        credentials: { password: DEMO_PASSWORD, note: 'dev-only; rotate in real deploys' },
       },
       null,
       2,
