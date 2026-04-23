@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: rfp-pulse-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-rfp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rfp_local_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-rfp_pulse}
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - rfp_pulse_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-rfp} -d ${POSTGRES_DB:-rfp_pulse}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  rfp_pulse_pgdata:
