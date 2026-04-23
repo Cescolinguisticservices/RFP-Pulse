@@ -140,6 +140,20 @@ export class QuestionsController {
       throw new ForbiddenException('Question belongs to a different tenant');
     }
 
+    const existing = await this.prisma.rFPAnswer.findFirst({
+      where: { questionId: question.id },
+      orderBy: { updatedAt: 'desc' },
+    });
+    if (
+      existing &&
+      existing.state !== WorkflowState.DRAFTING &&
+      existing.state !== WorkflowState.REJECTED
+    ) {
+      throw new BadRequestException(
+        `Cannot re-draft an answer in ${existing.state} state. Only DRAFTING and REJECTED answers can be re-drafted.`,
+      );
+    }
+
     const tenant = await this.prisma.tenant.findUniqueOrThrow({
       where: { id: question.tenantId },
     });
@@ -150,11 +164,6 @@ export class QuestionsController {
       question: question.questionText,
       provider,
       topK: 3,
-    });
-
-    const existing = await this.prisma.rFPAnswer.findFirst({
-      where: { questionId: question.id },
-      orderBy: { updatedAt: 'desc' },
     });
 
     const providerEnum = providerNameToEnum(usedProvider);

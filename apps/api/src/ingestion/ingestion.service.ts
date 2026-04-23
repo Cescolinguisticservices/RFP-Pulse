@@ -5,7 +5,7 @@ import { DocumentKind, LLMProvider as LLMProviderEnum } from '@rfp-pulse/db';
 import { RagService } from '../ai/rag.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FoiaAnalyzerService } from './foia-analyzer.service';
-import { parseDocument } from './parsers/document-parser';
+import { parseDocument, UnsupportedDocumentFormatError } from './parsers/document-parser';
 import { chunkText } from './text-chunker';
 
 export interface UploadedFile {
@@ -70,11 +70,19 @@ export class IngestionService {
       }
     }
 
-    const parsed = await parseDocument({
-      buffer: input.file.buffer,
-      mimeType: input.file.mimetype,
-      filename: input.file.originalname,
-    });
+    let parsed;
+    try {
+      parsed = await parseDocument({
+        buffer: input.file.buffer,
+        mimeType: input.file.mimetype,
+        filename: input.file.originalname,
+      });
+    } catch (err) {
+      if (err instanceof UnsupportedDocumentFormatError) {
+        throw new BadRequestException(err.message);
+      }
+      throw err;
+    }
 
     const { project, document } = await this.prisma.$transaction(async (tx) => {
       const project = await tx.rFPProject.create({
@@ -154,11 +162,19 @@ export class IngestionService {
    * against the configured LLM, and persists a {@link CompetitorIntel} row.
    */
   async uploadFoia(input: UploadFoiaInput) {
-    const parsed = await parseDocument({
-      buffer: input.file.buffer,
-      mimeType: input.file.mimetype,
-      filename: input.file.originalname,
-    });
+    let parsed;
+    try {
+      parsed = await parseDocument({
+        buffer: input.file.buffer,
+        mimeType: input.file.mimetype,
+        filename: input.file.originalname,
+      });
+    } catch (err) {
+      if (err instanceof UnsupportedDocumentFormatError) {
+        throw new BadRequestException(err.message);
+      }
+      throw err;
+    }
 
     const document = await this.prisma.document.create({
       data: {

@@ -56,12 +56,23 @@ const DOCX_HTML_SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
     td: ['colspan', 'rowspan'],
     th: ['colspan', 'rowspan', 'scope'],
   },
-  allowedSchemes: ['http', 'https', 'mailto', 'data'],
+  allowedSchemes: ['http', 'https', 'mailto'],
   allowedSchemesByTag: { img: ['http', 'https', 'data'] },
   transformTags: {
     a: sanitizeHtml.simpleTransform('a', { rel: 'noopener noreferrer', target: '_blank' }),
   },
 };
+
+/**
+ * Thrown when the caller uploads a file format the ingestion pipeline cannot
+ * handle (e.g. legacy binary `.doc`). Controllers catch this and map to a 400.
+ */
+export class UnsupportedDocumentFormatError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'UnsupportedDocumentFormatError';
+  }
+}
 
 export interface ParsedDocument {
   /** Canonical plain-text rendering of the document. */
@@ -103,11 +114,14 @@ type DocKind = 'pdf' | 'docx' | 'xlsx' | 'text';
 function detectKind(mimeType: string, filename: string): DocKind {
   const ext = filename.toLowerCase().split('.').pop() ?? '';
   if (mimeType === 'application/pdf' || ext === 'pdf') return 'pdf';
+  if (mimeType === 'application/msword' || ext === 'doc') {
+    throw new UnsupportedDocumentFormatError(
+      'Legacy .doc files are not supported. Please save as .docx and try again.',
+    );
+  }
   if (
     mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-    mimeType === 'application/msword' ||
-    ext === 'docx' ||
-    ext === 'doc'
+    ext === 'docx'
   ) {
     return 'docx';
   }
