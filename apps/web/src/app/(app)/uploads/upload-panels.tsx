@@ -115,8 +115,7 @@ function RfpUploader({
     return () => controller.abort();
   }, [role, accessToken, apiBase]);
 
-  const canSubmit =
-    !!file && rfpName.trim().length > 0 && dueDate.length > 0 && !busy;
+  const canSubmit = !!file && rfpName.trim().length > 0 && dueDate.length > 0 && !busy;
 
   async function upload(): Promise<void> {
     if (!file) return;
@@ -137,7 +136,9 @@ function RfpUploader({
       });
       if (!res.ok) {
         const body = await res.text();
-        throw new Error(`Upload failed: ${res.status} ${res.statusText}${body ? ` — ${body}` : ''}`);
+        throw new Error(
+          `Upload failed: ${res.status} ${res.statusText}${body ? ` — ${body}` : ''}`,
+        );
       }
       setResult((await res.json()) as RfpUploadResult);
       setFile(null);

@@ -68,9 +68,7 @@ export default async function RfpListPage(): Promise<JSX.Element> {
     createdBy: p.createdBy
       ? { id: p.createdBy.id, label: p.createdBy.name ?? p.createdBy.email }
       : null,
-    assignee: p.assignee
-      ? { id: p.assignee.id, label: p.assignee.name ?? p.assignee.email }
-      : null,
+    assignee: p.assignee ? { id: p.assignee.id, label: p.assignee.name ?? p.assignee.email } : null,
   }));
 
   return (

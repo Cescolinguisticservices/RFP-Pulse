@@ -117,8 +117,7 @@ export function RfpList({
   }
 
   const visibleIds = sorted.map((r) => r.id);
-  const allVisibleSelected =
-    visibleIds.length > 0 && visibleIds.every((id) => selected.has(id));
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selected.has(id));
 
   function toggleSelectAllVisible(): void {
     setSelected((prev) => {
@@ -152,7 +151,9 @@ export function RfpList({
       });
       if (!res.ok) {
         const body = await res.text();
-        throw new Error(`DELETE failed: ${res.status} ${res.statusText}${body ? ` — ${body}` : ''}`);
+        throw new Error(
+          `DELETE failed: ${res.status} ${res.statusText}${body ? ` — ${body}` : ''}`,
+        );
       }
       setSelected(new Set());
       router.refresh();
