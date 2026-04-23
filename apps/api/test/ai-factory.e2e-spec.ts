@@ -1,0 +1,139 @@
+import { ChatAnthropic } from '@langchain/anthropic';
+import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import { AIMessage } from '@langchain/core/messages';
+import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
+import { ChatGroq } from '@langchain/groq';
+import { ChatOpenAI } from '@langchain/openai';
+
+import { LLMProvider as LLMProviderEnum } from '@rfp-pulse/db';
+
+import { DraftAnswerService } from '../src/ai/draft-answer.service';
+import { createChatModel, providerNameFromEnum, type LLMProviderName } from '../src/ai/llm.factory';
+import { DeterministicMockChatModel } from '../src/ai/mock-chat-model';
+import { RagService, type RetrievedEntry } from '../src/ai/rag.service';
+
+describe('LLM Strategy factory (Step 3.16)', () => {
+  const apiKey = 'test-key-not-real';
+
+  it.each<[LLMProviderName, new (...args: never[]) => unknown]>([
+    ['openai', ChatOpenAI],
+    ['gemini', ChatGoogleGenerativeAI],
+    ['claude', ChatAnthropic],
+    ['llama', ChatGroq],
+  ])('instantiates the correct LangChain class for provider %s', (provider, Ctor) => {
+    const model = createChatModel({ provider, apiKey });
+    expect(model).toBeInstanceOf(Ctor);
+  });
+
+  it('maps the Prisma LLMProvider enum onto the factory string names', () => {
+    expect(providerNameFromEnum(LLMProviderEnum.OPENAI)).toBe('openai');
+    expect(providerNameFromEnum(LLMProviderEnum.GEMINI)).toBe('gemini');
+    expect(providerNameFromEnum(LLMProviderEnum.CLAUDE)).toBe('claude');
+    expect(providerNameFromEnum(LLMProviderEnum.LLAMA)).toBe('llama');
+  });
+
+  it('throws on an unknown provider name', () => {
+    expect(() =>
+      createChatModel({ provider: 'bogus' as unknown as LLMProviderName, apiKey }),
+    ).toThrow(/Unknown LLM provider/);
+  });
+
+  it('returns valid FOIA JSON when the mock model sees the structured prompt', async () => {
+    const mock = new DeterministicMockChatModel('openai');
+    const { HumanMessage, SystemMessage } = await import('@langchain/core/messages');
+    const foiaPrompt = [
+      'You are a competitive-intelligence analyst. Extract pricing models, technical strategies, and win themes from the following competitor proposal.',
+      '',
+      'Competitor proposal:',
+      'Acme Rival Co charges $99/seat/month. Single-region deploy. Wins on low price.',
+      '',
+      'Respond with strict JSON matching this TypeScript type (no markdown, no prose):',
+      '{ "pricingModel": string, "technicalStrategies": string, "winThemes": string }',
+    ].join('\n');
+    const raw = await mock._call([new SystemMessage('sys'), new HumanMessage(foiaPrompt)]);
+    const parsed = JSON.parse(raw);
+    expect(parsed).toMatchObject({
+      pricingModel: expect.stringContaining('$99/seat'),
+      technicalStrategies: expect.any(String),
+      winThemes: expect.any(String),
+    });
+  });
+
+  it('falls back to the deterministic mock chat model when no API key is configured', () => {
+    const prior = {
+      OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+      GOOGLE_API_KEY: process.env.GOOGLE_API_KEY,
+      ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+      GROQ_API_KEY: process.env.GROQ_API_KEY,
+    };
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.GOOGLE_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.GROQ_API_KEY;
+    try {
+      const model = createChatModel({ provider: 'openai' });
+      expect(model).toBeInstanceOf(DeterministicMockChatModel);
+    } finally {
+      if (prior.OPENAI_API_KEY) process.env.OPENAI_API_KEY = prior.OPENAI_API_KEY;
+      if (prior.GOOGLE_API_KEY) process.env.GOOGLE_API_KEY = prior.GOOGLE_API_KEY;
+      if (prior.ANTHROPIC_API_KEY) process.env.ANTHROPIC_API_KEY = prior.ANTHROPIC_API_KEY;
+      if (prior.GROQ_API_KEY) process.env.GROQ_API_KEY = prior.GROQ_API_KEY;
+    }
+  });
+});
+
+describe('DraftAnswerService (Step 3 RAG + strategy integration)', () => {
+  const fakeRetrieved: RetrievedEntry[] = [
+    {
+      id: 'kb-1',
+      title: 'Security compliance',
+      content: 'SOC 2 Type II audited annually; ISO 27001 certified.',
+      source: null,
+      similarity: 0.92,
+    },
+    {
+      id: 'kb-2',
+      title: 'Pricing model',
+      content: 'Tiered per-seat SaaS pricing with volume discounts.',
+      source: null,
+      similarity: 0.11,
+    },
+  ];
+
+  it('retrieves the top-K context, routes to the selected provider, and returns the draft', async () => {
+    const rag = {
+      retrieveTopK: jest.fn().mockResolvedValue(fakeRetrieved),
+    } as unknown as RagService;
+
+    const capturedOptions: Array<{ provider: LLMProviderName }> = [];
+    const invokeSpy = jest.fn(async () => new AIMessage('SOC 2 Type II; ISO 27001.'));
+    const fakeModel = { invoke: invokeSpy } as unknown as BaseChatModel;
+
+    const service = new DraftAnswerService(rag);
+    service.setChatModelBuilder((opts) => {
+      capturedOptions.push(opts);
+      return fakeModel;
+    });
+
+    const result = await service.draft({
+      tenantId: 'tenant-x',
+      question: 'Describe your security posture.',
+      provider: LLMProviderEnum.CLAUDE,
+      topK: 2,
+    });
+
+    expect(rag.retrieveTopK).toHaveBeenCalledWith('tenant-x', 'Describe your security posture.', 2);
+    expect(capturedOptions).toEqual([{ provider: 'claude' }]);
+    expect(invokeSpy).toHaveBeenCalledTimes(1);
+    const prompt = invokeSpy.mock.calls[0][0] as Array<{ content: unknown }>;
+    const human = prompt[1];
+    expect(String(human.content)).toContain('SOC 2 Type II audited annually');
+    expect(String(human.content)).toContain('Pricing model');
+    expect(String(human.content)).toContain('Describe your security posture.');
+    expect(result).toEqual({
+      draft: 'SOC 2 Type II; ISO 27001.',
+      retrieved: fakeRetrieved,
+      provider: 'claude',
+    });
+  });
+});
