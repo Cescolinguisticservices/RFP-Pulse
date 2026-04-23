@@ -208,7 +208,11 @@ export function TaskList({
               </div>
               <div className="flex items-center gap-2">
                 {q.isSelected && (
-                  <Badge variant="default" className="text-[10px]" data-testid={`selected-badge-${q.id}`}>
+                  <Badge
+                    variant="default"
+                    className="text-[10px]"
+                    data-testid={`selected-badge-${q.id}`}
+                  >
                     Selected
                   </Badge>
                 )}

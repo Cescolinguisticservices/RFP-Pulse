@@ -347,7 +347,11 @@ function InlineNameCell({
         aria-label="Save name"
         data-testid={`save-name-${user.id}`}
       >
-        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+        {busy ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <Check className="h-3.5 w-3.5" />
+        )}
       </Button>
       <Button
         type="button"

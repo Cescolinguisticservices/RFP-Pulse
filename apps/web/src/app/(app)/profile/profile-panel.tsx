@@ -127,9 +127,7 @@ export function ProfilePanel({
               {nameMsg && (
                 <p
                   className={
-                    nameMsg.kind === 'ok'
-                      ? 'text-xs text-emerald-700'
-                      : 'text-xs text-destructive'
+                    nameMsg.kind === 'ok' ? 'text-xs text-emerald-700' : 'text-xs text-destructive'
                   }
                   data-testid="profile-name-msg"
                 >

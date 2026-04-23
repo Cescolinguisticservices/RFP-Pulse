@@ -19,19 +19,17 @@ function textToHtml(text: string): string {
   if (paragraphs.length === 0) return '<p></p>';
   return paragraphs
     .map((block) => {
-      const escaped = block
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
+      const escaped = block.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       return `<p>${escaped.replace(/\n/g, '<br />')}</p>`;
     })
     .join('');
 }
 
 export function RfpContentViewer({ text }: { text: string | null }): JSX.Element {
-  const content = useMemo(() => (text ? textToHtml(text) : '<p>Original text not available.</p>'), [
-    text,
-  ]);
+  const content = useMemo(
+    () => (text ? textToHtml(text) : '<p>Original text not available.</p>'),
+    [text],
+  );
 
   const editor = useEditor({
     extensions: [StarterKit],

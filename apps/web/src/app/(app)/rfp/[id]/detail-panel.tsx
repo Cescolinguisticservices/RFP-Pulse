@@ -294,9 +294,7 @@ export function RfpDetailPanel({
           {questions.length === 0 ? (
             <p className="text-sm text-muted-foreground" data-testid="rfp-questions-empty">
               No questions yet.
-              {canManage
-                ? ' Click \u201cGenerate Questions\u201d or add one manually below.'
-                : ''}
+              {canManage ? ' Click \u201cGenerate Questions\u201d or add one manually below.' : ''}
             </p>
           ) : (
             <ul className="flex flex-col divide-y">
@@ -507,7 +505,11 @@ function AddQuestionRow({
             </option>
           ))}
         </Select>
-        <Button type="submit" disabled={busy || text.trim().length === 0} data-testid="question-add-submit">
+        <Button
+          type="submit"
+          disabled={busy || text.trim().length === 0}
+          data-testid="question-add-submit"
+        >
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
           Add
         </Button>
