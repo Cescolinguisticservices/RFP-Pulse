@@ -34,7 +34,7 @@ export class IngestionController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     assertFile(file);
-    const { document, extractedText, metadata } = await this.ingestion.uploadRfp({
+    const { document, extractedText, metadata, indexedChunks } = await this.ingestion.uploadRfp({
       tenantId: user.tenantId,
       file,
       projectId: projectId ?? null,
@@ -46,6 +46,7 @@ export class IngestionController {
       sizeBytes: document.sizeBytes,
       textLength: extractedText.length,
       preview: extractedText.slice(0, 500),
+      indexedChunks,
       metadata,
     };
   }
