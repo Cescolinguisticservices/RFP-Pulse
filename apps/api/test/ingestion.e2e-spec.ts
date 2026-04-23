@@ -107,6 +107,7 @@ describe('Ingestion endpoints (Step 4.20–4.24)', () => {
     const res = await request(app.getHttpServer())
       .post('/api/upload-rfp')
       .set('Authorization', `Bearer ${signToken(Role.ADMIN, adminUserId)}`)
+      .field('rfpName', 'Cloud security RFP')
       .attach('file', Buffer.from(body, 'utf-8'), 'rfp-sample.txt')
       .expect(201);
 
@@ -155,6 +156,7 @@ describe('Ingestion endpoints (Step 4.20–4.24)', () => {
     const res = await request(app.getHttpServer())
       .post('/api/upload-rfp')
       .set('Authorization', `Bearer ${signToken(Role.ADMIN, adminUserId)}`)
+      .field('rfpName', 'Scoring workbook RFP')
       .attach('file', buffer, {
         filename: 'scoring.xlsx',
         contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

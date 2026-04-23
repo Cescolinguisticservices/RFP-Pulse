@@ -1,6 +1,6 @@
 'use client';
 
-import { KeyRound, Loader2, UserPlus } from 'lucide-react';
+import { Check, KeyRound, Loader2, Pencil, UserPlus, X } from 'lucide-react';
 import { useState } from 'react';
 
 import { Role } from '@rfp-pulse/db';
@@ -17,6 +17,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { roleLabel } from '@/lib/roles';
 
 export interface UserSummary {
   id: string;
@@ -89,7 +90,10 @@ export function UsersPanel({
     }
   }
 
-  async function updateRole(userId: string, role: Role): Promise<void> {
+  async function patchUser(
+    userId: string,
+    patch: { role?: Role; name?: string | null },
+  ): Promise<void> {
     setError(null);
     try {
       const res = await fetch(`${apiBase}/api/users/${userId}`, {
@@ -98,7 +102,7 @@ export function UsersPanel({
           Authorization: `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ role }),
+        body: JSON.stringify(patch),
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { message?: string };
@@ -109,6 +113,10 @@ export function UsersPanel({
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Unknown error');
     }
+  }
+
+  function updateRole(userId: string, role: Role): Promise<void> {
+    return patchUser(userId, { role });
   }
 
   async function resetPassword(userId: string): Promise<void> {
@@ -167,7 +175,7 @@ export function UsersPanel({
               >
                 {INVITABLE_ROLES.map((r) => (
                   <option key={r} value={r}>
-                    {r}
+                    {roleLabel(r)}
                   </option>
                 ))}
               </Select>
@@ -224,10 +232,14 @@ export function UsersPanel({
               {users.map((u) => (
                 <TableRow key={u.id} data-testid={`user-row-${u.id}`}>
                   <TableCell className="font-medium">{u.email}</TableCell>
-                  <TableCell className="text-muted-foreground">{u.name ?? '—'}</TableCell>
+                  <TableCell>
+                    <InlineNameCell user={u} onSave={(name) => patchUser(u.id, { name })} />
+                  </TableCell>
                   <TableCell>
                     {u.id === currentUserId ? (
-                      <span className="text-xs text-muted-foreground">{u.role} (you)</span>
+                      <span className="text-xs text-muted-foreground">
+                        {roleLabel(u.role)} (you)
+                      </span>
                     ) : (
                       <Select
                         value={u.role}
@@ -237,7 +249,7 @@ export function UsersPanel({
                       >
                         {INVITABLE_ROLES.map((r) => (
                           <option key={r} value={r}>
-                            {r}
+                            {roleLabel(r)}
                           </option>
                         ))}
                       </Select>
@@ -265,6 +277,92 @@ export function UsersPanel({
           </Table>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function InlineNameCell({
+  user,
+  onSave,
+}: {
+  user: UserSummary;
+  onSave: (name: string | null) => Promise<void>;
+}): JSX.Element {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(user.name ?? '');
+  const [busy, setBusy] = useState(false);
+
+  if (!editing) {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="text-sm text-muted-foreground" data-testid={`user-name-${user.id}`}>
+          {user.name ?? '—'}
+        </span>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-6 px-1.5"
+          aria-label="Edit name"
+          onClick={() => {
+            setValue(user.name ?? '');
+            setEditing(true);
+          }}
+          data-testid={`edit-name-${user.id}`}
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    );
+  }
+
+  async function commit(): Promise<void> {
+    setBusy(true);
+    const next = value.trim();
+    await onSave(next.length === 0 ? null : next);
+    setBusy(false);
+    setEditing(false);
+  }
+
+  return (
+    <div className="flex items-center gap-1">
+      <Input
+        autoFocus
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') void commit();
+          if (e.key === 'Escape') setEditing(false);
+        }}
+        className="h-8 w-40 text-xs"
+        data-testid={`edit-name-input-${user.id}`}
+      />
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-7 px-1.5"
+        disabled={busy}
+        onClick={() => void commit()}
+        aria-label="Save name"
+        data-testid={`save-name-${user.id}`}
+      >
+        {busy ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <Check className="h-3.5 w-3.5" />
+        )}
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-7 px-1.5"
+        onClick={() => setEditing(false)}
+        aria-label="Cancel edit"
+      >
+        <X className="h-3.5 w-3.5" />
+      </Button>
     </div>
   );
 }

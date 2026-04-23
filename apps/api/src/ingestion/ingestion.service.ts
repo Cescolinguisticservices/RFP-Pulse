@@ -1,11 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 
 import { DocumentKind, LLMProvider as LLMProviderEnum } from '@rfp-pulse/db';
 
 import { RagService } from '../ai/rag.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FoiaAnalyzerService } from './foia-analyzer.service';
-import { parseDocument } from './parsers/document-parser';
+import { parseDocument, UnsupportedDocumentFormatError } from './parsers/document-parser';
 import { chunkText } from './text-chunker';
 
 export interface UploadedFile {
@@ -17,9 +17,17 @@ export interface UploadedFile {
 
 export interface UploadRfpInput {
   tenantId: string;
+  /** User who initiated the upload — becomes the project's createdBy. */
+  createdById: string;
   file: UploadedFile;
-  /** Optional existing project to attach the document to. */
-  projectId?: string | null;
+  /** Human-readable RFP name (becomes `RFPProject.title`). Required. */
+  rfpName: string;
+  /** Optional client/agency issuing the RFP. */
+  clientName?: string | null;
+  /** Optional response deadline. */
+  dueAt?: Date | null;
+  /** Optional user within the same tenant to assign the RFP to. */
+  assigneeId?: string | null;
 }
 
 export interface UploadFoiaInput {
@@ -48,22 +56,59 @@ export class IngestionService {
    * and returns the document + extraction metadata.
    */
   async uploadRfp(input: UploadRfpInput) {
-    const parsed = await parseDocument({
-      buffer: input.file.buffer,
-      mimeType: input.file.mimetype,
-      filename: input.file.originalname,
-    });
+    const rfpName = input.rfpName.trim();
+    if (!rfpName) {
+      throw new BadRequestException('rfpName is required');
+    }
+    if (input.assigneeId) {
+      const assignee = await this.prisma.user.findFirst({
+        where: { id: input.assigneeId, tenantId: input.tenantId },
+        select: { id: true },
+      });
+      if (!assignee) {
+        throw new BadRequestException('assigneeId does not belong to this tenant');
+      }
+    }
 
-    const document = await this.prisma.document.create({
-      data: {
-        tenantId: input.tenantId,
-        projectId: input.projectId ?? null,
-        filename: input.file.originalname,
+    let parsed;
+    try {
+      parsed = await parseDocument({
+        buffer: input.file.buffer,
         mimeType: input.file.mimetype,
-        sizeBytes: input.file.size,
-        kind: DocumentKind.RFP,
-        s3Key: null,
-      },
+        filename: input.file.originalname,
+      });
+    } catch (err) {
+      if (err instanceof UnsupportedDocumentFormatError) {
+        throw new BadRequestException(err.message);
+      }
+      throw err;
+    }
+
+    const { project, document } = await this.prisma.$transaction(async (tx) => {
+      const project = await tx.rFPProject.create({
+        data: {
+          tenantId: input.tenantId,
+          title: rfpName,
+          clientName: input.clientName ?? null,
+          dueAt: input.dueAt ?? null,
+          createdById: input.createdById,
+          assigneeId: input.assigneeId ?? null,
+        },
+      });
+      const document = await tx.document.create({
+        data: {
+          tenantId: input.tenantId,
+          projectId: project.id,
+          filename: input.file.originalname,
+          mimeType: input.file.mimetype,
+          sizeBytes: input.file.size,
+          kind: DocumentKind.RFP,
+          s3Key: null,
+          extractedText: parsed.text,
+          extractedHtml: parsed.html ?? null,
+        },
+      });
+      return { project, document };
     });
 
     const indexedChunks = await this.indexChunks({
@@ -74,6 +119,7 @@ export class IngestionService {
     });
 
     return {
+      project,
       document,
       extractedText: parsed.text,
       metadata: parsed.metadata,
@@ -116,11 +162,19 @@ export class IngestionService {
    * against the configured LLM, and persists a {@link CompetitorIntel} row.
    */
   async uploadFoia(input: UploadFoiaInput) {
-    const parsed = await parseDocument({
-      buffer: input.file.buffer,
-      mimeType: input.file.mimetype,
-      filename: input.file.originalname,
-    });
+    let parsed;
+    try {
+      parsed = await parseDocument({
+        buffer: input.file.buffer,
+        mimeType: input.file.mimetype,
+        filename: input.file.originalname,
+      });
+    } catch (err) {
+      if (err instanceof UnsupportedDocumentFormatError) {
+        throw new BadRequestException(err.message);
+      }
+      throw err;
+    }
 
     const document = await this.prisma.document.create({
       data: {

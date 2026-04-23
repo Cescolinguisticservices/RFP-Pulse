@@ -16,6 +16,7 @@ export interface QuestionSummary {
   projectTitle: string;
   questionText: string;
   sectionPath: string | null;
+  isSelected: boolean;
   state: WorkflowState;
   answer: {
     id: string;
@@ -206,6 +207,15 @@ export function TaskList({
                 <CardTitle className="text-base">{q.questionText}</CardTitle>
               </div>
               <div className="flex items-center gap-2">
+                {q.isSelected && (
+                  <Badge
+                    variant="default"
+                    className="text-[10px]"
+                    data-testid={`selected-badge-${q.id}`}
+                  >
+                    Selected
+                  </Badge>
+                )}
                 <Badge variant={workflowStateVariant(q.state)}>{workflowStateLabel(q.state)}</Badge>
                 {q.state === 'DRAFTING' &&
                   (role === 'ADMIN' || role === 'RFP_MANAGER' || role === 'SME') && (

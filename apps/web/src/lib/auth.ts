@@ -74,6 +74,7 @@ export const authOptions: AuthOptions = {
       const payload = {
         sub: token?.sub,
         email: token?.email,
+        name: token?.name ?? null,
         role: token?.role,
         tenantId: token?.tenantId,
         tenantSlug: token?.tenantSlug,
@@ -104,17 +105,19 @@ export const authOptions: AuthOptions = {
       if (user) {
         token.sub = user.id;
         token.email = user.email;
+        token.name = user.name ?? null;
         token.role = user.role as Role;
         token.tenantId = user.tenantId;
         token.tenantSlug = user.tenantSlug;
         token.passwordMustChange = user.passwordMustChange ?? false;
       }
-      // Re-hydrate passwordMustChange + role from DB on session update so the
-      // force-change-password redirect clears after the user changes their
-      // temp password (or an admin edits their role).
+      // Re-hydrate name / passwordMustChange / role from DB on session update
+      // so the force-change-password redirect clears after the user changes
+      // their temp password (or an admin edits their role / name).
       if (trigger === 'update' && token.sub) {
         const fresh = await prisma.user.findUnique({ where: { id: token.sub } });
         if (fresh) {
+          token.name = fresh.name;
           token.role = fresh.role;
           token.passwordMustChange = fresh.passwordMustChange;
         }
@@ -125,6 +128,7 @@ export const authOptions: AuthOptions = {
       if (session.user) {
         session.user.id = token.sub;
         session.user.email = token.email;
+        session.user.name = token.name ?? null;
         session.user.role = token.role;
         session.user.tenantId = token.tenantId;
         session.user.tenantSlug = token.tenantSlug;
