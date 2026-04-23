@@ -9,6 +9,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { hash } from 'bcryptjs';
@@ -42,6 +43,18 @@ export interface InviteUserResult {
 }
 
 /**
+ * Trimmed-down user shape returned from the `assignable` lookup used by the
+ * RFP "Assign to" dropdown. Deliberately omits password metadata so the
+ * endpoint is safe to call from any upload-capable role.
+ */
+export interface AssignableUserSummary {
+  id: string;
+  email: string;
+  name: string | null;
+  role: Role;
+}
+
+/**
  * Tenant-scoped user management. ADMINs manage users within their own tenant;
  * role changes are limited to non-SUPER_ADMIN roles (SUPER_ADMIN is
  * provisioned out-of-band via seed / DB).
@@ -59,6 +72,29 @@ export class UsersController {
       orderBy: { createdAt: 'asc' },
     });
     return { users: users.map(toSummary) };
+  }
+
+  /**
+   * Lightweight lookup for the RFP "assign to" dropdown. Any upload-capable
+   * role (ADMIN, RFP_MANAGER) can enumerate tenant users, optionally filtered
+   * by a single role. Returns only id/email/name/role — no password metadata.
+   */
+  @Get('assignable')
+  @Roles(Role.ADMIN, Role.RFP_MANAGER)
+  async listAssignable(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('role') roleQuery?: string,
+  ): Promise<{ users: AssignableUserSummary[] }> {
+    const role = parseAssignableRole(roleQuery);
+    const users = await this.prisma.user.findMany({
+      where: {
+        tenantId: user.tenantId,
+        ...(role ? { role } : {}),
+      },
+      orderBy: [{ name: 'asc' }, { email: 'asc' }],
+      select: { id: true, email: true, name: true, role: true },
+    });
+    return { users };
   }
 
   /** ADMIN invites a new user to their tenant; returns a one-time temp password. */
@@ -184,6 +220,24 @@ function parseInvitableRole(value: string | undefined): Role {
     throw new BadRequestException(
       `role must be one of: ${INVITABLE_ROLES.join(', ')} (SUPER_ADMIN is not invitable)`,
     );
+  }
+  return upper as Role;
+}
+
+/** Roles that may own an RFP assignment. SUPER_ADMIN and READ_ONLY are excluded. */
+export const ASSIGNABLE_ROLES: Role[] = [
+  Role.ADMIN,
+  Role.RFP_MANAGER,
+  Role.SME,
+  Role.REVIEWER,
+  Role.APPROVER,
+];
+
+function parseAssignableRole(value: string | undefined): Role | null {
+  if (!value) return null;
+  const upper = value.toUpperCase();
+  if (!ASSIGNABLE_ROLES.includes(upper as Role)) {
+    throw new BadRequestException(`role filter must be one of: ${ASSIGNABLE_ROLES.join(', ')}`);
   }
   return upper as Role;
 }

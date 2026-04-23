@@ -29,9 +29,9 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { href: '/dashboard', label: 'Projects', icon: LayoutDashboard, testId: 'nav-dashboard' },
+  { href: '/dashboard', label: 'RFP', icon: LayoutDashboard, testId: 'nav-dashboard' },
   { href: '/tasks', label: 'My Tasks', icon: ClipboardList, testId: 'nav-tasks' },
-  { href: '/uploads', label: 'Uploads', icon: UploadCloud, testId: 'nav-uploads' },
+  { href: '/uploads', label: 'RFP Uploads', icon: UploadCloud, testId: 'nav-uploads' },
   { href: '/competitors', label: 'Competitor Intel', icon: Radar, testId: 'nav-competitors' },
 ];
 

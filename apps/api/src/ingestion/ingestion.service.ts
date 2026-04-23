@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 
 import { DocumentKind, LLMProvider as LLMProviderEnum } from '@rfp-pulse/db';
 
@@ -17,9 +17,17 @@ export interface UploadedFile {
 
 export interface UploadRfpInput {
   tenantId: string;
+  /** User who initiated the upload — becomes the project's createdBy. */
+  createdById: string;
   file: UploadedFile;
-  /** Optional existing project to attach the document to. */
-  projectId?: string | null;
+  /** Human-readable RFP name (becomes `RFPProject.title`). Required. */
+  rfpName: string;
+  /** Optional client/agency issuing the RFP. */
+  clientName?: string | null;
+  /** Optional response deadline. */
+  dueAt?: Date | null;
+  /** Optional user within the same tenant to assign the RFP to. */
+  assigneeId?: string | null;
 }
 
 export interface UploadFoiaInput {
@@ -48,22 +56,49 @@ export class IngestionService {
    * and returns the document + extraction metadata.
    */
   async uploadRfp(input: UploadRfpInput) {
+    const rfpName = input.rfpName.trim();
+    if (!rfpName) {
+      throw new BadRequestException('rfpName is required');
+    }
+    if (input.assigneeId) {
+      const assignee = await this.prisma.user.findFirst({
+        where: { id: input.assigneeId, tenantId: input.tenantId },
+        select: { id: true },
+      });
+      if (!assignee) {
+        throw new BadRequestException('assigneeId does not belong to this tenant');
+      }
+    }
+
     const parsed = await parseDocument({
       buffer: input.file.buffer,
       mimeType: input.file.mimetype,
       filename: input.file.originalname,
     });
 
-    const document = await this.prisma.document.create({
-      data: {
-        tenantId: input.tenantId,
-        projectId: input.projectId ?? null,
-        filename: input.file.originalname,
-        mimeType: input.file.mimetype,
-        sizeBytes: input.file.size,
-        kind: DocumentKind.RFP,
-        s3Key: null,
-      },
+    const { project, document } = await this.prisma.$transaction(async (tx) => {
+      const project = await tx.rFPProject.create({
+        data: {
+          tenantId: input.tenantId,
+          title: rfpName,
+          clientName: input.clientName ?? null,
+          dueAt: input.dueAt ?? null,
+          createdById: input.createdById,
+          assigneeId: input.assigneeId ?? null,
+        },
+      });
+      const document = await tx.document.create({
+        data: {
+          tenantId: input.tenantId,
+          projectId: project.id,
+          filename: input.file.originalname,
+          mimeType: input.file.mimetype,
+          sizeBytes: input.file.size,
+          kind: DocumentKind.RFP,
+          s3Key: null,
+        },
+      });
+      return { project, document };
     });
 
     const indexedChunks = await this.indexChunks({
@@ -74,6 +109,7 @@ export class IngestionService {
     });
 
     return {
+      project,
       document,
       extractedText: parsed.text,
       metadata: parsed.metadata,

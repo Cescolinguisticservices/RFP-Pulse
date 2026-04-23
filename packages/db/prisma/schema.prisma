@@ -46,6 +46,17 @@ enum DocumentKind {
   KNOWLEDGE
 }
 
+enum RFPStatus {
+  DRAFT
+  IN_PROGRESS
+  UNDER_REVIEW
+  APPROVED
+  SUBMITTED
+  WON
+  LOST
+  CANCELLED
+}
+
 // ---------- Tenancy & Users ----------
 
 model Tenant {
@@ -80,9 +91,11 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  assignedQuestions RFPQuestion[] @relation("AssignedSME")
-  authoredAnswers   RFPAnswer[]   @relation("AnswerAuthor")
-  reviewedAnswers   RFPAnswer[]   @relation("AnswerReviewer")
+  assignedQuestions   RFPQuestion[] @relation("AssignedSME")
+  authoredAnswers     RFPAnswer[]   @relation("AnswerAuthor")
+  reviewedAnswers     RFPAnswer[]   @relation("AnswerReviewer")
+  createdRfpProjects  RFPProject[]  @relation("RFPProjectCreatedBy")
+  assignedRfpProjects RFPProject[]  @relation("RFPProjectAssignee")
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -92,19 +105,31 @@ model User {
 // ---------- RFP Projects & Q/A ----------
 
 model RFPProject {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   tenantId    String
-  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   title       String
   clientName  String?
   dueAt       DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  /// Lifecycle status tracked at the RFP level (distinct from per-question
+  /// WorkflowState on individual answers).
+  status      RFPStatus @default(DRAFT)
+  /// Creator (null for rows that predate this column). Preserved on user delete.
+  createdById String?
+  createdBy   User?     @relation("RFPProjectCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  /// Primary assignee for the RFP.
+  assigneeId  String?
+  assignee    User?     @relation("RFPProjectAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   questions RFPQuestion[]
   documents Document[]
 
   @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([createdById])
+  @@index([assigneeId])
   @@map("rfp_projects")
 }
 

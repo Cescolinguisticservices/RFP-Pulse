@@ -1,13 +1,19 @@
 'use client';
 
 import { FileText, Loader2, Radar, UploadCloud } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 interface RfpUploadResult {
   documentId: string;
+  projectId: string;
+  rfpName: string;
+  clientName: string | null;
+  dueAt: string | null;
+  assigneeId: string | null;
+  status: string;
   filename: string;
   textLength: number;
   indexedChunks: number;
@@ -22,6 +28,28 @@ interface FoiaUploadResult {
   technicalStrategies: string | null;
   winThemes: string | null;
 }
+
+interface AssignableUser {
+  id: string;
+  email: string;
+  name: string | null;
+  role: string;
+}
+
+/**
+ * Roles that may own an RFP assignment. Mirrors the server-side
+ * ASSIGNABLE_ROLES constant in users.controller.ts.
+ */
+const ASSIGNABLE_ROLES = ['RFP_MANAGER', 'SME', 'REVIEWER', 'APPROVER', 'ADMIN'] as const;
+type AssignableRole = (typeof ASSIGNABLE_ROLES)[number];
+
+const ROLE_LABELS: Record<AssignableRole, string> = {
+  ADMIN: 'Admin',
+  RFP_MANAGER: 'RFP Manager',
+  SME: 'Subject-Matter Expert',
+  REVIEWER: 'Reviewer',
+  APPROVER: 'Approver',
+};
 
 export function UploadPanels({
   accessToken,
@@ -47,9 +75,48 @@ function RfpUploader({
 }): JSX.Element {
   const inputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
+  const [rfpName, setRfpName] = useState('');
+  const [clientName, setClientName] = useState('');
+  const [dueDate, setDueDate] = useState('');
+  const [role, setRole] = useState<AssignableRole | ''>('');
+  const [assigneeId, setAssigneeId] = useState('');
+  const [users, setUsers] = useState<AssignableUser[]>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<RfpUploadResult | null>(null);
+
+  useEffect(() => {
+    if (!role) {
+      setUsers([]);
+      setAssigneeId('');
+      return;
+    }
+    const controller = new AbortController();
+    setUsersLoading(true);
+    setAssigneeId('');
+    fetch(`${apiBase}/api/users/assignable?role=${encodeURIComponent(role)}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      signal: controller.signal,
+    })
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`Failed to load users: ${res.status}`);
+        const body = (await res.json()) as { users: AssignableUser[] };
+        setUsers(body.users);
+      })
+      .catch((e) => {
+        if (controller.signal.aborted) return;
+        setUsers([]);
+        setError(e instanceof Error ? e.message : 'Failed to load users');
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setUsersLoading(false);
+      });
+    return () => controller.abort();
+  }, [role, accessToken, apiBase]);
+
+  const canSubmit =
+    !!file && rfpName.trim().length > 0 && dueDate.length > 0 && !busy;
 
   async function upload(): Promise<void> {
     if (!file) return;
@@ -59,16 +126,26 @@ function RfpUploader({
     try {
       const form = new FormData();
       form.append('file', file);
+      form.append('rfpName', rfpName.trim());
+      if (clientName.trim()) form.append('clientName', clientName.trim());
+      if (dueDate) form.append('dueDate', dueDate);
+      if (assigneeId) form.append('assigneeId', assigneeId);
       const res = await fetch(`${apiBase}/api/upload-rfp`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${accessToken}` },
         body: form,
       });
       if (!res.ok) {
-        throw new Error(`Upload failed: ${res.status} ${res.statusText}`);
+        const body = await res.text();
+        throw new Error(`Upload failed: ${res.status} ${res.statusText}${body ? ` — ${body}` : ''}`);
       }
       setResult((await res.json()) as RfpUploadResult);
       setFile(null);
+      setRfpName('');
+      setClientName('');
+      setDueDate('');
+      setRole('');
+      setAssigneeId('');
       if (inputRef.current) inputRef.current.value = '';
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Unknown error');
@@ -90,6 +167,81 @@ function RfpUploader({
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-xs font-medium text-muted-foreground">RFP name *</span>
+          <input
+            type="text"
+            value={rfpName}
+            onChange={(e) => setRfpName(e.target.value)}
+            placeholder="City of Acme — IT modernization"
+            data-testid="rfp-name-input"
+            className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-xs font-medium text-muted-foreground">Client / issuing agency</span>
+          <input
+            type="text"
+            value={clientName}
+            onChange={(e) => setClientName(e.target.value)}
+            placeholder="City of Acme"
+            data-testid="rfp-client-input"
+            className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-xs font-medium text-muted-foreground">Due date *</span>
+          <input
+            type="date"
+            value={dueDate}
+            onChange={(e) => setDueDate(e.target.value)}
+            data-testid="rfp-due-input"
+            className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm"
+          />
+        </label>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-xs font-medium text-muted-foreground">Assign role</span>
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value as AssignableRole | '')}
+              data-testid="rfp-role-select"
+              className="h-9 rounded-md border border-input bg-background px-2 py-1 text-sm"
+            >
+              <option value="">—</option>
+              {ASSIGNABLE_ROLES.map((r) => (
+                <option key={r} value={r}>
+                  {ROLE_LABELS[r]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-xs font-medium text-muted-foreground">Assign to user</span>
+            <select
+              value={assigneeId}
+              onChange={(e) => setAssigneeId(e.target.value)}
+              disabled={!role || usersLoading}
+              data-testid="rfp-assignee-select"
+              className="h-9 rounded-md border border-input bg-background px-2 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <option value="">
+                {!role
+                  ? 'Pick a role first'
+                  : usersLoading
+                    ? 'Loading…'
+                    : users.length === 0
+                      ? 'No users in this role'
+                      : 'Unassigned'}
+              </option>
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name ? `${u.name} (${u.email})` : u.email}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
         <input
           ref={inputRef}
           type="file"
@@ -101,7 +253,7 @@ function RfpUploader({
         <Button
           type="button"
           onClick={upload}
-          disabled={!file || busy}
+          disabled={!canSubmit}
           data-testid="rfp-upload-button"
           className="self-start"
         >
@@ -122,10 +274,11 @@ function RfpUploader({
             className="rounded-md border bg-muted/30 p-3 text-xs"
             data-testid="rfp-upload-result"
           >
-            <p className="font-medium">{result.filename}</p>
+            <p className="font-medium">{result.rfpName}</p>
             <p className="text-muted-foreground">
-              Extracted {result.textLength.toLocaleString()} chars · Indexed {result.indexedChunks}{' '}
-              chunk{result.indexedChunks === 1 ? '' : 's'} into the knowledge base.
+              {result.filename} · Extracted {result.textLength.toLocaleString()} chars · Indexed{' '}
+              {result.indexedChunks} chunk{result.indexedChunks === 1 ? '' : 's'} into the knowledge
+              base.
             </p>
             <p className="mt-2 whitespace-pre-wrap text-muted-foreground">
               {result.preview}

@@ -17,10 +17,11 @@ export default async function UploadsPage(): Promise<JSX.Element> {
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-bold tracking-tight">Uploads</h1>
+        <h1 className="text-2xl font-bold tracking-tight">RFP Uploads</h1>
         <p className="text-sm text-muted-foreground">
-          Ingest RFP documents (auto-indexed into the knowledge base) or competitor/FOIA documents
-          (extracted for competitive intel).
+          Start a new RFP by uploading its document — the file is auto-indexed into the tenant
+          knowledge base and a new entry appears on the <strong>RFP</strong> list. You can also
+          upload competitor/FOIA documents for competitive intel.
         </p>
       </header>
 
