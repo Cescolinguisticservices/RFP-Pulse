@@ -272,7 +272,6 @@ export function RfpList({
           <Table data-testid="rfp-table">
             <TableHeader>
               <TableRow>
-                {canManage && <TableHead className="w-10" />}
                 {canManage && (
                   <TableHead className="w-10">
                     <input
@@ -284,6 +283,7 @@ export function RfpList({
                     />
                   </TableHead>
                 )}
+                {canManage && <TableHead className="w-10" />}
                 <SortableHead
                   label="RFP Name"
                   active={sortKey === 'title'}
@@ -345,6 +345,17 @@ export function RfpList({
                 sorted.map((row) => (
                   <TableRow key={row.id} data-testid={`rfp-row-${row.id}`}>
                     {canManage && (
+                      <TableCell>
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${row.title}`}
+                          checked={selected.has(row.id)}
+                          onChange={() => toggleSelect(row.id)}
+                          data-testid={`rfp-select-${row.id}`}
+                        />
+                      </TableCell>
+                    )}
+                    {canManage && (
                       <TableCell className="w-10">
                         <button
                           type="button"
@@ -356,17 +367,6 @@ export function RfpList({
                         >
                           <Pencil className="h-4 w-4" />
                         </button>
-                      </TableCell>
-                    )}
-                    {canManage && (
-                      <TableCell>
-                        <input
-                          type="checkbox"
-                          aria-label={`Select ${row.title}`}
-                          checked={selected.has(row.id)}
-                          onChange={() => toggleSelect(row.id)}
-                          data-testid={`rfp-select-${row.id}`}
-                        />
                       </TableCell>
                     )}
                     <TableCell className="font-medium">

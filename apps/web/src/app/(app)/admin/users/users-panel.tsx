@@ -17,6 +17,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { roleLabel } from '@/lib/roles';
 
 export interface UserSummary {
   id: string;
@@ -167,7 +168,7 @@ export function UsersPanel({
               >
                 {INVITABLE_ROLES.map((r) => (
                   <option key={r} value={r}>
-                    {r}
+                    {roleLabel(r)}
                   </option>
                 ))}
               </Select>
@@ -227,7 +228,9 @@ export function UsersPanel({
                   <TableCell className="text-muted-foreground">{u.name ?? '—'}</TableCell>
                   <TableCell>
                     {u.id === currentUserId ? (
-                      <span className="text-xs text-muted-foreground">{u.role} (you)</span>
+                      <span className="text-xs text-muted-foreground">
+                        {roleLabel(u.role)} (you)
+                      </span>
                     ) : (
                       <Select
                         value={u.role}
@@ -237,7 +240,7 @@ export function UsersPanel({
                       >
                         {INVITABLE_ROLES.map((r) => (
                           <option key={r} value={r}>
-                            {r}
+                            {roleLabel(r)}
                           </option>
                         ))}
                       </Select>
