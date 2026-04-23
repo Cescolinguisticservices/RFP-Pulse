@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { hash } from 'bcryptjs';
 
-import { LLMProvider, Role } from '@rfp-pulse/db';
+import { LLMProvider, Prisma, Role } from '@rfp-pulse/db';
 
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -74,23 +74,31 @@ export class TenantsController {
     const tempPassword = generateTempPassword();
     const passwordHash = await hash(tempPassword, BCRYPT_ROUNDS);
 
-    const tenant = await this.prisma.tenant.create({
-      data: {
-        name,
-        slug,
-        defaultProvider,
-        users: {
-          create: {
-            email: adminEmail,
-            name: adminName,
-            role: Role.ADMIN,
-            passwordHash,
-            passwordMustChange: true,
+    let tenant;
+    try {
+      tenant = await this.prisma.tenant.create({
+        data: {
+          name,
+          slug,
+          defaultProvider,
+          users: {
+            create: {
+              email: adminEmail,
+              name: adminName,
+              role: Role.ADMIN,
+              passwordHash,
+              passwordMustChange: true,
+            },
           },
         },
-      },
-      include: { users: true },
-    });
+        include: { users: true },
+      });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        throw new ConflictException(`Tenant slug "${slug}" already exists`);
+      }
+      throw err;
+    }
 
     const admin = tenant.users[0];
     return {
