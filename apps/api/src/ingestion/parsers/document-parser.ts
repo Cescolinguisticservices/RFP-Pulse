@@ -6,6 +6,12 @@ import pdfParse from './pdf-parse-loader';
 export interface ParsedDocument {
   /** Canonical plain-text rendering of the document. */
   text: string;
+  /**
+   * Optional formatted HTML rendering. Populated for DOCX via mammoth so the
+   * detail viewer can preserve headings/bold/lists/tables. Plain text is
+   * still populated for RAG chunking and AI prompts.
+   */
+  html?: string;
   /** Parser-specific metadata (page count, sheet names, etc.). */
   metadata: Record<string, unknown>;
 }
@@ -65,10 +71,19 @@ async function parsePdf(buffer: Buffer): Promise<ParsedDocument> {
 }
 
 async function parseDocx(buffer: Buffer): Promise<ParsedDocument> {
-  const result = await mammoth.extractRawText({ buffer });
+  const [htmlResult, textResult] = await Promise.all([
+    mammoth.convertToHtml({ buffer }),
+    mammoth.extractRawText({ buffer }),
+  ]);
   return {
-    text: result.value.trim(),
-    metadata: { warnings: result.messages.map((m) => m.message) },
+    text: textResult.value.trim(),
+    html: htmlResult.value.trim() || undefined,
+    metadata: {
+      warnings: [
+        ...htmlResult.messages.map((m) => m.message),
+        ...textResult.messages.map((m) => m.message),
+      ],
+    },
   };
 }
 

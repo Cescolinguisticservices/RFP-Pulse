@@ -52,6 +52,7 @@ export interface RfpDetailDocument {
   mimeType: string;
   sizeBytes: number;
   extractedText: string | null;
+  extractedHtml: string | null;
 }
 
 export interface RfpDetailQuestion {
@@ -251,7 +252,10 @@ export function RfpDetailPanel({
           )}
         </CardHeader>
         <CardContent>
-          <RfpContentViewer text={initial.document?.extractedText ?? null} />
+          <RfpContentViewer
+            html={initial.document?.extractedHtml ?? null}
+            text={initial.document?.extractedText ?? null}
+          />
         </CardContent>
       </Card>
 

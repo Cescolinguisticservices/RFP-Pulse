@@ -74,6 +74,7 @@ export class ProjectsController {
       mimeType: string;
       sizeBytes: number;
       extractedText: string | null;
+      extractedHtml: string | null;
     } | null;
     questions: Array<{
       id: string;
@@ -141,6 +142,7 @@ export class ProjectsController {
             mimeType: doc.mimeType,
             sizeBytes: doc.sizeBytes,
             extractedText: doc.extractedText,
+            extractedHtml: doc.extractedHtml,
           }
         : null,
       questions: project.questions.map((q) => ({

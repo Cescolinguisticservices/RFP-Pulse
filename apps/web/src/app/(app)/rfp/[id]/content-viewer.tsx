@@ -1,14 +1,14 @@
 'use client';
 
-import { EditorContent, useEditor } from '@tiptap/react';
-import StarterKit from '@tiptap/starter-kit';
 import { useMemo } from 'react';
 
 /**
- * Read-only Tiptap viewer for an RFP's extracted plain text. Paragraph
- * breaks in the source (blank lines) become <p> blocks so headings /
- * numbered lists retain their visual grouping. Single line breaks become
- * hard breaks inside a paragraph.
+ * Read-only viewer for an RFP's extracted content.
+ *
+ * When the ingestion pipeline produced an HTML rendering (DOCX via mammoth),
+ * we render that directly so headings / bold / italics / lists / tables keep
+ * their formatting. Otherwise we fall back to the plain-text extraction and
+ * convert blank lines into paragraphs.
  */
 function textToHtml(text: string): string {
   const paragraphs = text
@@ -25,38 +25,27 @@ function textToHtml(text: string): string {
     .join('');
 }
 
-export function RfpContentViewer({ text }: { text: string | null }): JSX.Element {
-  const content = useMemo(
-    () => (text ? textToHtml(text) : '<p>Original text not available.</p>'),
-    [text],
-  );
-
-  const editor = useEditor({
-    extensions: [StarterKit],
-    content,
-    editable: false,
-    immediatelyRender: false,
-  });
-
-  if (!editor) {
-    return (
-      <div
-        className="max-h-[480px] overflow-y-auto rounded-md border bg-muted/10 p-4 text-sm text-muted-foreground"
-        data-testid="rfp-content-loading"
-      >
-        Loading content…
-      </div>
-    );
-  }
+export function RfpContentViewer({
+  html,
+  text,
+}: {
+  html?: string | null;
+  text: string | null;
+}): JSX.Element {
+  const content = useMemo(() => {
+    if (html && html.trim().length > 0) return html;
+    if (text && text.trim().length > 0) return textToHtml(text);
+    return '<p class="text-muted-foreground">Original text not available.</p>';
+  }, [html, text]);
 
   return (
     <div
-      className="max-h-[480px] overflow-y-auto rounded-md border bg-background p-4"
+      className="max-h-[640px] overflow-y-auto rounded-md border bg-background p-4"
       data-testid="rfp-content-viewer"
     >
-      <EditorContent
-        editor={editor}
+      <div
         className="prose prose-sm max-w-none text-sm leading-relaxed dark:prose-invert"
+        dangerouslySetInnerHTML={{ __html: content }}
       />
     </div>
   );

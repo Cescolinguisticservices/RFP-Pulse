@@ -268,6 +268,10 @@ model Document {
   /// to power the RFP detail view and question-generation prompt. Nullable
   /// for historical rows that predate this column.
   extractedText String?
+  /// Optional formatted HTML rendering (populated for DOCX via mammoth).
+  /// When present, the detail viewer renders this instead of escaped text
+  /// so headings/bold/lists/tables keep their formatting.
+  extractedHtml String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 

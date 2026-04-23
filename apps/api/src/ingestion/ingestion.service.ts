@@ -97,6 +97,7 @@ export class IngestionService {
           kind: DocumentKind.RFP,
           s3Key: null,
           extractedText: parsed.text,
+          extractedHtml: parsed.html ?? null,
         },
       });
       return { project, document };
