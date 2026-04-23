@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  Patch,
   Post,
   UnauthorizedException,
   UseGuards,
@@ -20,6 +21,7 @@ const MIN_PASSWORD_LENGTH = 8;
 export interface AccountStatus {
   id: string;
   email: string;
+  name: string | null;
   role: string;
   tenantId: string;
   passwordMustChange: boolean;
@@ -42,6 +44,36 @@ export class AccountController {
     return {
       id: row.id,
       email: row.email,
+      name: row.name,
+      role: row.role,
+      tenantId: row.tenantId,
+      passwordMustChange: row.passwordMustChange,
+    };
+  }
+
+  /** Update the caller's own profile fields. Currently supports `name`. */
+  @Patch('me')
+  async updateMe(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: { name?: string | null },
+  ): Promise<AccountStatus> {
+    if (body.name === undefined) {
+      throw new BadRequestException('no updatable fields provided');
+    }
+    let name: string | null;
+    if (body.name === null) {
+      name = null;
+    } else if (typeof body.name === 'string') {
+      const trimmed = body.name.trim();
+      name = trimmed.length > 0 ? trimmed : null;
+    } else {
+      throw new BadRequestException('name must be a string or null');
+    }
+    const row = await this.prisma.user.update({ where: { id: user.id }, data: { name } });
+    return {
+      id: row.id,
+      email: row.email,
+      name: row.name,
       role: row.role,
       tenantId: row.tenantId,
       passwordMustChange: row.passwordMustChange,

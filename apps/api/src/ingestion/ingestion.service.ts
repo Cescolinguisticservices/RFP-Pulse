@@ -96,6 +96,7 @@ export class IngestionService {
           sizeBytes: input.file.size,
           kind: DocumentKind.RFP,
           s3Key: null,
+          extractedText: parsed.text,
         },
       });
       return { project, document };

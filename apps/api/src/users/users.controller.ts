@@ -133,27 +133,60 @@ export class UsersController {
     return { user: toSummary(created), tempPassword };
   }
 
-  /** ADMIN updates a user's role (within the same tenant). */
+  /**
+   * Updates mutable user fields. Role changes remain ADMIN-only. Name changes
+   * are allowed for ADMINs (any user in their tenant) and for the user themself.
+   * At least one of `name` or `role` must be provided.
+   */
   @Patch(':id')
-  @Roles(Role.ADMIN)
-  async updateRole(
+  @Roles(Role.ADMIN, Role.RFP_MANAGER, Role.SME, Role.REVIEWER, Role.APPROVER, Role.READ_ONLY)
+  async update(
     @CurrentUser() actor: AuthenticatedUser,
     @Param('id') id: string,
-    @Body() body: { role?: string },
+    @Body() body: { role?: string; name?: string | null },
   ): Promise<UserSummary> {
-    const role = parseInvitableRole(body.role);
     const target = await this.prisma.user.findUnique({ where: { id } });
     if (!target) throw new NotFoundException(`User ${id} not found`);
     if (target.tenantId !== actor.tenantId) {
       throw new ForbiddenException('User belongs to a different tenant');
     }
-    if (target.role === Role.SUPER_ADMIN) {
-      throw new ForbiddenException('Cannot modify a SUPER_ADMIN user');
+
+    const data: { role?: Role; name?: string | null } = {};
+
+    if (body.role !== undefined) {
+      if (actor.role !== Role.ADMIN) {
+        throw new ForbiddenException('Only ADMINs can change roles');
+      }
+      if (target.role === Role.SUPER_ADMIN) {
+        throw new ForbiddenException('Cannot modify a SUPER_ADMIN user');
+      }
+      if (target.id === actor.id) {
+        throw new BadRequestException('Cannot change your own role');
+      }
+      data.role = parseInvitableRole(body.role);
     }
-    if (target.id === actor.id) {
-      throw new BadRequestException('Cannot change your own role');
+
+    if (body.name !== undefined) {
+      const isSelf = target.id === actor.id;
+      const isAdmin = actor.role === Role.ADMIN;
+      if (!isSelf && !isAdmin) {
+        throw new ForbiddenException('Only ADMINs can change another user\u2019s name');
+      }
+      if (body.name === null) {
+        data.name = null;
+      } else if (typeof body.name === 'string') {
+        const trimmed = body.name.trim();
+        data.name = trimmed.length > 0 ? trimmed : null;
+      } else {
+        throw new BadRequestException('name must be a string or null');
+      }
     }
-    const updated = await this.prisma.user.update({ where: { id }, data: { role } });
+
+    if (Object.keys(data).length === 0) {
+      throw new BadRequestException('no updatable fields provided');
+    }
+
+    const updated = await this.prisma.user.update({ where: { id }, data });
     return toSummary(updated);
   }
 

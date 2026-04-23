@@ -7,6 +7,7 @@ import {
   LogOut,
   Radar,
   Settings,
+  UserCircle,
   Users,
   Zap,
 } from 'lucide-react';
@@ -16,6 +17,7 @@ import { usePathname } from 'next/navigation';
 
 import { Role } from '@rfp-pulse/db';
 
+import { roleLabel } from '@/lib/roles';
 import { cn } from '@/lib/utils';
 
 interface NavItem {
@@ -92,10 +94,26 @@ export function AppSidebar(): JSX.Element {
       <div className="border-t px-3 py-3">
         {session?.user && (
           <div className="flex flex-col gap-2">
-            <div className="px-2 text-xs">
-              <div className="font-medium text-foreground">{session.user.email}</div>
-              <div className="text-muted-foreground">{session.user.role}</div>
-            </div>
+            <Link
+              href="/profile"
+              data-testid="nav-profile"
+              className={cn(
+                'flex items-start gap-2 rounded-md px-2 py-2 text-xs transition-colors',
+                pathname === '/profile'
+                  ? 'bg-accent text-accent-foreground'
+                  : 'hover:bg-accent hover:text-accent-foreground',
+              )}
+            >
+              <UserCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <div className="flex min-w-0 flex-col">
+                <span className="truncate font-medium text-foreground">
+                  {session.user.name ?? session.user.email}
+                </span>
+                <span className="truncate text-muted-foreground">
+                  {roleLabel(session.user.role as Role)}
+                </span>
+              </div>
+            </Link>
             <button
               type="button"
               onClick={() => signOut({ callbackUrl: '/login' })}

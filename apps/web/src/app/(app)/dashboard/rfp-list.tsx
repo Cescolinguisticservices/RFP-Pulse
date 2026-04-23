@@ -370,7 +370,13 @@ export function RfpList({
                       </TableCell>
                     )}
                     <TableCell className="font-medium">
-                      <div>{row.title}</div>
+                      <Link
+                        href={`/rfp/${row.id}`}
+                        className="text-foreground hover:underline"
+                        data-testid={`rfp-link-${row.id}`}
+                      >
+                        {row.title}
+                      </Link>
                       {row.clientName && (
                         <div className="text-xs text-muted-foreground">{row.clientName}</div>
                       )}

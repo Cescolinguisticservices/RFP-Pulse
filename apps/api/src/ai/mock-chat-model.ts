@@ -33,6 +33,10 @@ export class DeterministicMockChatModel extends SimpleChatModel {
       return buildFoiaMockJson(prompt, this.providerLabel);
     }
 
+    if (isExtractQuestionsPrompt(messages)) {
+      return buildExtractQuestionsMockJson(prompt);
+    }
+
     const question = extractQuestion(prompt);
     const excerpts = extractExcerpts(prompt);
 
@@ -96,4 +100,48 @@ function extractFoiaSource(prompt: string): string {
   const after = prompt.slice(idx + header.length);
   const end = after.indexOf('\n\nRespond with');
   return (end === -1 ? after : after.slice(0, end)).trim();
+}
+
+function isExtractQuestionsPrompt(messages: BaseMessage[]): boolean {
+  const system = messages.find((m) => m._getType() === 'system');
+  const content = typeof system?.content === 'string' ? system.content : '';
+  return content.includes('expert RFP analyst') && content.includes('JSON array');
+}
+
+/**
+ * Deterministic stub: scan the RFP text for question-like lines so the
+ * question-generation flow is exercisable without a real LLM key.
+ */
+function buildExtractQuestionsMockJson(prompt: string): string {
+  const header = 'RFP document text:';
+  const idx = prompt.indexOf(header);
+  const body = idx === -1 ? prompt : prompt.slice(idx + header.length);
+  const lines = body
+    .split(/\r?\n+/)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 8);
+  const questions: string[] = [];
+  const seen = new Set<string>();
+  for (const line of lines) {
+    const clean = line.replace(/^\s*(?:[-*•]|\d+[.)])\s+/, '').trim();
+    const isQuestion =
+      clean.endsWith('?') ||
+      /^(describe|provide|list|explain|outline|detail|identify|include|submit|specify|state|confirm|please)\b/i.test(
+        clean,
+      );
+    if (!isQuestion) continue;
+    const key = clean.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    questions.push(clean);
+    if (questions.length >= 10) break;
+  }
+  if (questions.length === 0) {
+    questions.push(
+      'Describe your company and relevant experience.',
+      'Provide pricing for the proposed scope of work.',
+      'Outline your implementation timeline.',
+    );
+  }
+  return JSON.stringify(questions);
 }

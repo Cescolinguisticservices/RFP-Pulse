@@ -11,7 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 
-import { Role, RFPStatus, WorkflowState } from '@rfp-pulse/db';
+import { DocumentKind, Role, RFPStatus, WorkflowState } from '@rfp-pulse/db';
 
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -55,6 +55,105 @@ export interface ProjectSummary {
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class ProjectsController {
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * RFP detail endpoint (Step 10). Returns the project, the latest RFP
+   * document (if any) with its extracted text, and the full question list.
+   * Tenant-scoped; cross-tenant reads 404.
+   */
+  @Get(':id')
+  @Roles(Role.ADMIN, Role.RFP_MANAGER, Role.SME, Role.REVIEWER, Role.APPROVER, Role.READ_ONLY)
+  async detail(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+  ): Promise<{
+    project: ProjectSummary;
+    document: {
+      id: string;
+      filename: string;
+      mimeType: string;
+      sizeBytes: number;
+      extractedText: string | null;
+    } | null;
+    questions: Array<{
+      id: string;
+      questionText: string;
+      sectionPath: string | null;
+      isSelected: boolean;
+      assignee: ProjectUserRef | null;
+      createdAt: string;
+      updatedAt: string;
+    }>;
+  }> {
+    const project = await this.prisma.rFPProject.findFirst({
+      where: { id, tenantId: user.tenantId },
+      include: {
+        createdBy: { select: { id: true, email: true, name: true, role: true } },
+        assignee: { select: { id: true, email: true, name: true, role: true } },
+        questions: {
+          orderBy: { createdAt: 'asc' },
+          include: {
+            assignedSme: { select: { id: true, email: true, name: true, role: true } },
+            answers: { select: { state: true }, orderBy: { updatedAt: 'desc' }, take: 1 },
+          },
+        },
+        documents: {
+          where: { kind: DocumentKind.RFP },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
+      },
+    });
+    if (!project) throw new NotFoundException('RFP not found');
+
+    const stateCounts: Record<WorkflowState, number> = {
+      DRAFTING: 0,
+      IN_REVIEW: 0,
+      PENDING_APPROVAL: 0,
+      APPROVED: 0,
+      REJECTED: 0,
+    };
+    for (const q of project.questions) {
+      const state = q.answers[0]?.state ?? WorkflowState.DRAFTING;
+      stateCounts[state] += 1;
+    }
+
+    const doc = project.documents[0] ?? null;
+
+    return {
+      project: {
+        id: project.id,
+        title: project.title,
+        clientName: project.clientName,
+        dueAt: project.dueAt ? project.dueAt.toISOString() : null,
+        status: project.status,
+        createdBy: project.createdBy ?? null,
+        assignee: project.assignee ?? null,
+        questionCount: project.questions.length,
+        stateCounts,
+        createdAt: project.createdAt.toISOString(),
+        updatedAt: project.updatedAt.toISOString(),
+      },
+      document: doc
+        ? {
+            id: doc.id,
+            filename: doc.filename,
+            mimeType: doc.mimeType,
+            sizeBytes: doc.sizeBytes,
+            extractedText: doc.extractedText,
+          }
+        : null,
+      questions: project.questions.map((q) => ({
+        id: q.id,
+        questionText: q.questionText,
+        sectionPath: q.sectionPath,
+        isSelected: q.isSelected,
+        assignee: q.assignedSme ?? null,
+        createdAt: q.createdAt.toISOString(),
+        updatedAt: q.updatedAt.toISOString(),
+      })),
+    };
+  }
 
   @Get()
   @Roles(Role.ADMIN, Role.RFP_MANAGER, Role.SME, Role.REVIEWER, Role.APPROVER, Role.READ_ONLY)

@@ -3,6 +3,7 @@ import { Global, Module, type Provider } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
 import { DraftAnswerService } from './draft-answer.service';
 import { createEmbeddings } from './embeddings.factory';
+import { ExtractQuestionsService } from './extract-questions.service';
 import { EMBEDDINGS_TOKEN, RagService } from './rag.service';
 
 const embeddingsProvider: Provider = {
@@ -18,7 +19,7 @@ const embeddingsProvider: Provider = {
 @Global()
 @Module({
   imports: [PrismaModule],
-  providers: [embeddingsProvider, RagService, DraftAnswerService],
-  exports: [EMBEDDINGS_TOKEN, RagService, DraftAnswerService],
+  providers: [embeddingsProvider, RagService, DraftAnswerService, ExtractQuestionsService],
+  exports: [EMBEDDINGS_TOKEN, RagService, DraftAnswerService, ExtractQuestionsService],
 })
 export class AiModule {}

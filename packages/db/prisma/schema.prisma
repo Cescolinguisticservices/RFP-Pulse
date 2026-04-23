@@ -144,6 +144,10 @@ model RFPQuestion {
   sectionPath    String?
   assignedSmeId  String?
   assignedSme    User?    @relation("AssignedSME", fields: [assignedSmeId], references: [id])
+  /// Whether the user has marked this question as "selected" for inclusion
+  /// in the RFP response effort. Selected + assigned questions surface on
+  /// the assignee's Tasks page.
+  isSelected     Boolean  @default(false)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -260,6 +264,10 @@ model Document {
   mimeType   String
   sizeBytes  Int
   kind       DocumentKind
+  /// Full extracted plain text (from pdf-parse / docx / xlsx / txt), used
+  /// to power the RFP detail view and question-generation prompt. Nullable
+  /// for historical rows that predate this column.
+  extractedText String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
