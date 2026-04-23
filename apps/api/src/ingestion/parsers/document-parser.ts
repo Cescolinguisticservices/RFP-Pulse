@@ -1,7 +1,67 @@
 import mammoth from 'mammoth';
+import sanitizeHtml from 'sanitize-html';
 import * as XLSX from 'xlsx';
 
 import pdfParse from './pdf-parse-loader';
+
+/**
+ * Whitelist of tags/attributes we allow in extracted DOCX HTML. Mammoth's
+ * default output is already conservative, but we run the result through
+ * sanitize-html defensively so a crafted DOCX cannot inject script handlers
+ * or other XSS vectors into the RFP detail viewer.
+ */
+const DOCX_HTML_SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
+  allowedTags: [
+    'p',
+    'br',
+    'hr',
+    'h1',
+    'h2',
+    'h3',
+    'h4',
+    'h5',
+    'h6',
+    'strong',
+    'b',
+    'em',
+    'i',
+    'u',
+    's',
+    'strike',
+    'sup',
+    'sub',
+    'ul',
+    'ol',
+    'li',
+    'blockquote',
+    'pre',
+    'code',
+    'table',
+    'thead',
+    'tbody',
+    'tr',
+    'td',
+    'th',
+    'caption',
+    'colgroup',
+    'col',
+    'a',
+    'img',
+    'span',
+    'div',
+  ],
+  allowedAttributes: {
+    a: ['href', 'name', 'target', 'rel', 'title'],
+    img: ['src', 'alt', 'title', 'width', 'height'],
+    td: ['colspan', 'rowspan'],
+    th: ['colspan', 'rowspan', 'scope'],
+  },
+  allowedSchemes: ['http', 'https', 'mailto', 'data'],
+  allowedSchemesByTag: { img: ['http', 'https', 'data'] },
+  transformTags: {
+    a: sanitizeHtml.simpleTransform('a', { rel: 'noopener noreferrer', target: '_blank' }),
+  },
+};
 
 export interface ParsedDocument {
   /** Canonical plain-text rendering of the document. */
@@ -75,9 +135,11 @@ async function parseDocx(buffer: Buffer): Promise<ParsedDocument> {
     mammoth.convertToHtml({ buffer }),
     mammoth.extractRawText({ buffer }),
   ]);
+  const rawHtml = htmlResult.value.trim();
+  const safeHtml = rawHtml ? sanitizeHtml(rawHtml, DOCX_HTML_SANITIZE_OPTIONS).trim() : '';
   return {
     text: textResult.value.trim(),
-    html: htmlResult.value.trim() || undefined,
+    html: safeHtml || undefined,
     metadata: {
       warnings: [
         ...htmlResult.messages.map((m) => m.message),
