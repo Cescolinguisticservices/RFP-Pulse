@@ -104,7 +104,7 @@ export class AnswersController {
       where: { id: answer.id },
       data: {
         state: to,
-        ...(to === WorkflowState.IN_REVIEW ? { reviewerId: user.id } : {}),
+        ...(answer.state === WorkflowState.IN_REVIEW ? { reviewerId: user.id } : {}),
       },
     });
 

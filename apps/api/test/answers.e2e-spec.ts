@@ -118,7 +118,7 @@ describe('Answer workflow transitions (Step 6b)', () => {
 
     const row = await prisma.rFPAnswer.findUniqueOrThrow({ where: { id: answerId } });
     expect(row.state).toBe(WorkflowState.IN_REVIEW);
-    expect(row.reviewerId).toBe(smeUserId);
+    expect(row.reviewerId).toBeNull();
   });
 
   it('rejects SME attempting IN_REVIEW -> PENDING_APPROVAL (403)', async () => {
@@ -139,6 +139,7 @@ describe('Answer workflow transitions (Step 6b)', () => {
       .expect(201);
     const row = await prisma.rFPAnswer.findUniqueOrThrow({ where: { id: answerId } });
     expect(row.state).toBe(WorkflowState.PENDING_APPROVAL);
+    expect(row.reviewerId).toBe(reviewerUserId);
   });
 
   it('APPROVER can APPROVE PENDING_APPROVAL', async () => {
