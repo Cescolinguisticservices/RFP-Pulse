@@ -1,18 +1,63 @@
 'use client';
 
-import { ClipboardList, LayoutDashboard, LogOut, Radar, UploadCloud, Zap } from 'lucide-react';
+import {
+  Building2,
+  ClipboardList,
+  LayoutDashboard,
+  LogOut,
+  Radar,
+  Settings,
+  UploadCloud,
+  Users,
+  Zap,
+} from 'lucide-react';
 import { signOut, useSession } from 'next-auth/react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
+import { Role } from '@rfp-pulse/db';
+
 import { cn } from '@/lib/utils';
 
-const NAV_ITEMS = [
+interface NavItem {
+  href: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  testId: string;
+  /** Roles allowed to see this nav item. Undefined = all. */
+  roles?: Role[];
+}
+
+const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard', label: 'Projects', icon: LayoutDashboard, testId: 'nav-dashboard' },
   { href: '/tasks', label: 'My Tasks', icon: ClipboardList, testId: 'nav-tasks' },
   { href: '/uploads', label: 'Uploads', icon: UploadCloud, testId: 'nav-uploads' },
   { href: '/competitors', label: 'Competitor Intel', icon: Radar, testId: 'nav-competitors' },
-] as const;
+];
+
+const ADMIN_NAV_ITEMS: NavItem[] = [
+  {
+    href: '/admin/tenants',
+    label: 'Tenants',
+    icon: Building2,
+    testId: 'nav-admin-tenants',
+    roles: [Role.SUPER_ADMIN],
+  },
+  {
+    href: '/admin/users',
+    label: 'Users',
+    icon: Users,
+    testId: 'nav-admin-users',
+    roles: [Role.ADMIN, Role.SUPER_ADMIN],
+  },
+  {
+    href: '/admin/settings',
+    label: 'Settings',
+    icon: Settings,
+    testId: 'nav-admin-settings',
+    roles: [Role.ADMIN, Role.SUPER_ADMIN],
+  },
+];
 
 export function AppSidebar(): JSX.Element {
   const { data: session } = useSession();
@@ -33,28 +78,18 @@ export function AppSidebar(): JSX.Element {
       </div>
       <nav className="flex-1 px-3 py-2">
         <ul className="flex flex-col gap-1">
-          {NAV_ITEMS.map((item) => {
-            const active = pathname?.startsWith(item.href);
-            const Icon = item.icon;
-            return (
-              <li key={item.href}>
-                <Link
-                  href={item.href}
-                  data-testid={item.testId}
-                  className={cn(
-                    'flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                    active
-                      ? 'bg-accent text-accent-foreground'
-                      : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
-                  )}
-                >
-                  <Icon className="h-4 w-4" />
-                  {item.label}
-                </Link>
-              </li>
-            );
-          })}
+          {NAV_ITEMS.map((item) => renderNav(item, pathname))}
         </ul>
+        {session?.user && visibleAdminItems(session.user.role).length > 0 && (
+          <div className="mt-6">
+            <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Admin
+            </div>
+            <ul className="flex flex-col gap-1">
+              {visibleAdminItems(session.user.role).map((item) => renderNav(item, pathname))}
+            </ul>
+          </div>
+        )}
       </nav>
       <div className="border-t px-3 py-3">
         {session?.user && (
@@ -75,5 +110,31 @@ export function AppSidebar(): JSX.Element {
         )}
       </div>
     </aside>
+  );
+}
+
+function visibleAdminItems(role: Role): NavItem[] {
+  return ADMIN_NAV_ITEMS.filter((item) => !item.roles || item.roles.includes(role));
+}
+
+function renderNav(item: NavItem, pathname: string | null): JSX.Element {
+  const active = pathname?.startsWith(item.href) ?? false;
+  const Icon = item.icon;
+  return (
+    <li key={item.href}>
+      <Link
+        href={item.href}
+        data-testid={item.testId}
+        className={cn(
+          'flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+          active
+            ? 'bg-accent text-accent-foreground'
+            : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+        )}
+      >
+        <Icon className="h-4 w-4" />
+        {item.label}
+      </Link>
+    </li>
   );
 }

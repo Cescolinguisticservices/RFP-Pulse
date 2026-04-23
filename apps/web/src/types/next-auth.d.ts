@@ -11,6 +11,7 @@ declare module 'next-auth' {
       role: Role;
       tenantId: string;
       tenantSlug: string;
+      passwordMustChange: boolean;
     };
     accessToken: string;
   }
@@ -22,6 +23,7 @@ declare module 'next-auth' {
     role: Role;
     tenantId: string;
     tenantSlug: string;
+    passwordMustChange: boolean;
   }
 }
 
@@ -32,5 +34,6 @@ declare module 'next-auth/jwt' {
     role: Role;
     tenantId: string;
     tenantSlug: string;
+    passwordMustChange: boolean;
   }
 }
