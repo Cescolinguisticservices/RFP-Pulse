@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowDown, ArrowUp, ArrowUpDown, Loader2, Plus, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
@@ -20,6 +20,8 @@ import {
 } from '@/components/ui/table';
 import { RFP_STATUSES, rfpStatusLabel, rfpStatusVariant } from '@/lib/rfp-status';
 import { cn } from '@/lib/utils';
+
+import { RfpEditDialog } from './rfp-edit-dialog';
 
 export interface RfpListRowUserRef {
   id: string;
@@ -65,6 +67,12 @@ export function RfpList({
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const editingRow = useMemo(
+    () => (editingId ? (rows.find((r) => r.id === editingId) ?? null) : null),
+    [editingId, rows],
+  );
 
   const filtered = useMemo(() => {
     const needle = nameFilter.trim().toLowerCase();
@@ -262,6 +270,7 @@ export function RfpList({
           <Table data-testid="rfp-table">
             <TableHeader>
               <TableRow>
+                {canManage && <TableHead className="w-10" />}
                 {canManage && (
                   <TableHead className="w-10">
                     <input
@@ -321,7 +330,7 @@ export function RfpList({
               {sorted.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={canManage ? 7 : 6}
+                    colSpan={canManage ? 8 : 6}
                     className="py-8 text-center text-sm text-muted-foreground"
                     data-testid="rfp-empty"
                   >
@@ -333,6 +342,20 @@ export function RfpList({
               ) : (
                 sorted.map((row) => (
                   <TableRow key={row.id} data-testid={`rfp-row-${row.id}`}>
+                    {canManage && (
+                      <TableCell className="w-10">
+                        <button
+                          type="button"
+                          onClick={() => setEditingId(row.id)}
+                          aria-label={`Edit ${row.title}`}
+                          title="Edit"
+                          data-testid={`rfp-edit-${row.id}`}
+                          className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                      </TableCell>
+                    )}
                     {canManage && (
                       <TableCell>
                         <input
@@ -370,6 +393,19 @@ export function RfpList({
           </Table>
         </CardContent>
       </Card>
+
+      {editingRow && (
+        <RfpEditDialog
+          row={editingRow}
+          apiBase={apiBase}
+          accessToken={accessToken}
+          onClose={() => setEditingId(null)}
+          onSaved={() => {
+            setEditingId(null);
+            router.refresh();
+          }}
+        />
+      )}
     </div>
   );
 }

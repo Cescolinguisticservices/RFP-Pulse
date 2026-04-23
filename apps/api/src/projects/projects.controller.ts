@@ -5,6 +5,9 @@ import {
   Delete,
   Get,
   HttpCode,
+  NotFoundException,
+  Param,
+  Patch,
   UseGuards,
 } from '@nestjs/common';
 
@@ -22,6 +25,15 @@ export interface ProjectUserRef {
   email: string;
   name: string | null;
   role: Role;
+}
+
+export interface UpdateProjectBody {
+  title?: unknown;
+  clientName?: unknown;
+  dueDate?: unknown;
+  status?: unknown;
+  assigneeId?: unknown;
+  createdById?: unknown;
 }
 
 export interface ProjectSummary {
@@ -93,6 +105,144 @@ export class ProjectsController {
   }
 
   /**
+   * Patch mutable fields on a single RFP project. All updates are
+   * tenant-scoped; cross-tenant id probes return 404. Any user picked for
+   * `createdById` or `assigneeId` must belong to the caller's tenant.
+   */
+  @Patch(':id')
+  @Roles(Role.ADMIN, Role.RFP_MANAGER)
+  async update(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: UpdateProjectBody,
+  ): Promise<{ project: ProjectSummary }> {
+    const existing = await this.prisma.rFPProject.findFirst({
+      where: { id, tenantId: user.tenantId },
+      select: { id: true },
+    });
+    if (!existing) {
+      throw new NotFoundException('RFP not found');
+    }
+
+    const data = await this.buildUpdateData(body, user.tenantId);
+    const updated = await this.prisma.rFPProject.update({
+      where: { id },
+      data,
+      include: {
+        createdBy: { select: { id: true, email: true, name: true, role: true } },
+        assignee: { select: { id: true, email: true, name: true, role: true } },
+        questions: {
+          select: {
+            id: true,
+            answers: { select: { state: true }, orderBy: { updatedAt: 'desc' }, take: 1 },
+          },
+        },
+      },
+    });
+
+    const stateCounts: Record<WorkflowState, number> = {
+      DRAFTING: 0,
+      IN_REVIEW: 0,
+      PENDING_APPROVAL: 0,
+      APPROVED: 0,
+      REJECTED: 0,
+    };
+    for (const q of updated.questions) {
+      const state = q.answers[0]?.state ?? WorkflowState.DRAFTING;
+      stateCounts[state] += 1;
+    }
+    return {
+      project: {
+        id: updated.id,
+        title: updated.title,
+        clientName: updated.clientName,
+        dueAt: updated.dueAt ? updated.dueAt.toISOString() : null,
+        status: updated.status,
+        createdBy: updated.createdBy ?? null,
+        assignee: updated.assignee ?? null,
+        questionCount: updated.questions.length,
+        stateCounts,
+        createdAt: updated.createdAt.toISOString(),
+        updatedAt: updated.updatedAt.toISOString(),
+      },
+    };
+  }
+
+  private async buildUpdateData(
+    body: UpdateProjectBody,
+    tenantId: string,
+  ): Promise<{
+    title?: string;
+    clientName?: string | null;
+    dueAt?: Date | null;
+    status?: RFPStatus;
+    createdById?: string | null;
+    assigneeId?: string | null;
+  }> {
+    const data: {
+      title?: string;
+      clientName?: string | null;
+      dueAt?: Date | null;
+      status?: RFPStatus;
+      createdById?: string | null;
+      assigneeId?: string | null;
+    } = {};
+
+    if (body.title !== undefined) {
+      const title = typeof body.title === 'string' ? body.title.trim() : '';
+      if (!title) throw new BadRequestException('title must be a non-empty string');
+      data.title = title;
+    }
+    if (body.clientName !== undefined) {
+      if (body.clientName === null) {
+        data.clientName = null;
+      } else if (typeof body.clientName === 'string') {
+        const v = body.clientName.trim();
+        data.clientName = v.length > 0 ? v : null;
+      } else {
+        throw new BadRequestException('clientName must be a string or null');
+      }
+    }
+    if (body.dueDate !== undefined) {
+      data.dueAt = parseNullableDate(body.dueDate, 'dueDate');
+    }
+    if (body.status !== undefined) {
+      data.status = parseStatus(body.status);
+    }
+    if (body.assigneeId !== undefined) {
+      data.assigneeId = await this.resolveTenantUserId(body.assigneeId, tenantId, 'assigneeId');
+    }
+    if (body.createdById !== undefined) {
+      data.createdById = await this.resolveTenantUserId(body.createdById, tenantId, 'createdById');
+    }
+    if (Object.keys(data).length === 0) {
+      throw new BadRequestException('no updatable fields provided');
+    }
+    return data;
+  }
+
+  private async resolveTenantUserId(
+    value: unknown,
+    tenantId: string,
+    field: string,
+  ): Promise<string | null> {
+    if (value === null || value === '') return null;
+    if (typeof value !== 'string') {
+      throw new BadRequestException(`${field} must be a string or null`);
+    }
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const exists = await this.prisma.user.findFirst({
+      where: { id: trimmed, tenantId },
+      select: { id: true },
+    });
+    if (!exists) {
+      throw new BadRequestException(`${field} does not belong to this tenant`);
+    }
+    return trimmed;
+  }
+
+  /**
    * Bulk delete RFP projects by id. Cascades to questions/answers/documents
    * via the existing Prisma relations (`onDelete: Cascade` on children,
    * `SetNull` on `Document.projectId`).
@@ -114,6 +264,43 @@ export class ProjectsController {
     });
     return { deleted: result.count };
   }
+}
+
+function parseNullableDate(value: unknown, field: string): Date | null {
+  if (value === null) return null;
+  if (typeof value !== 'string') {
+    throw new BadRequestException(`${field} must be a string or null`);
+  }
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const date = new Date(trimmed);
+  if (Number.isNaN(date.getTime())) {
+    throw new BadRequestException(`${field} "${trimmed}" is not a valid date`);
+  }
+  return date;
+}
+
+const ALL_STATUSES: RFPStatus[] = [
+  RFPStatus.DRAFT,
+  RFPStatus.IN_PROGRESS,
+  RFPStatus.UNDER_REVIEW,
+  RFPStatus.APPROVED,
+  RFPStatus.SUBMITTED,
+  RFPStatus.WON,
+  RFPStatus.LOST,
+  RFPStatus.CANCELLED,
+];
+
+function parseStatus(value: unknown): RFPStatus {
+  if (typeof value !== 'string') {
+    throw new BadRequestException('status must be a string');
+  }
+  const upper = value.trim().toUpperCase();
+  const match = ALL_STATUSES.find((s) => s === upper);
+  if (!match) {
+    throw new BadRequestException(`status must be one of: ${ALL_STATUSES.join(', ')}`);
+  }
+  return match;
 }
 
 function normalizeIdList(value: unknown): string[] {
