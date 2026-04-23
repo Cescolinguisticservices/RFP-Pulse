@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { ASSIGNABLE_ROLES, type AssignableRole, roleLabel } from '@/lib/roles';
 
 interface RfpUploadResult {
   documentId: string;
@@ -35,21 +36,6 @@ interface AssignableUser {
   name: string | null;
   role: string;
 }
-
-/**
- * Roles that may own an RFP assignment. Mirrors the server-side
- * ASSIGNABLE_ROLES constant in users.controller.ts.
- */
-const ASSIGNABLE_ROLES = ['RFP_MANAGER', 'SME', 'REVIEWER', 'APPROVER', 'ADMIN'] as const;
-type AssignableRole = (typeof ASSIGNABLE_ROLES)[number];
-
-const ROLE_LABELS: Record<AssignableRole, string> = {
-  ADMIN: 'Admin',
-  RFP_MANAGER: 'RFP Manager',
-  SME: 'Subject-Matter Expert',
-  REVIEWER: 'Reviewer',
-  APPROVER: 'Approver',
-};
 
 export function UploadPanels({
   accessToken,
@@ -212,7 +198,7 @@ function RfpUploader({
               <option value="">—</option>
               {ASSIGNABLE_ROLES.map((r) => (
                 <option key={r} value={r}>
-                  {ROLE_LABELS[r]}
+                  {roleLabel(r)}
                 </option>
               ))}
             </select>

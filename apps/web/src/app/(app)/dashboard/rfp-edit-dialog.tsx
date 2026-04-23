@@ -7,6 +7,7 @@ import type { RFPStatus, Role } from '@rfp-pulse/db';
 
 import { Button } from '@/components/ui/button';
 import { RFP_STATUSES, rfpStatusLabel } from '@/lib/rfp-status';
+import { ASSIGNABLE_ROLES, roleLabel } from '@/lib/roles';
 
 import type { RfpListRow } from './rfp-list';
 
@@ -16,8 +17,6 @@ interface AssignableUser {
   name: string | null;
   role: Role;
 }
-
-const ASSIGNABLE_ROLES: Role[] = ['RFP_MANAGER', 'SME', 'REVIEWER', 'APPROVER', 'ADMIN'] as Role[];
 
 export function RfpEditDialog({
   row,
@@ -224,7 +223,7 @@ export function RfpEditDialog({
               <option value="">— Unassigned —</option>
               {users.map((u) => (
                 <option key={u.id} value={u.id}>
-                  {(u.name ?? u.email) + ` (${u.role})`}
+                  {(u.name ?? u.email) + ' · ' + roleLabel(u.role)}
                 </option>
               ))}
             </select>
@@ -244,10 +243,10 @@ export function RfpEditDialog({
                 data-testid="rfp-edit-assignee-role"
                 className="h-9 w-full rounded-md border border-input bg-background px-2 py-1 text-sm"
               >
-                <option value="">— Any role —</option>
+                <option value="">Any role</option>
                 {ASSIGNABLE_ROLES.map((r) => (
                   <option key={r} value={r}>
-                    {r}
+                    {roleLabel(r)}
                   </option>
                 ))}
               </select>
@@ -263,7 +262,7 @@ export function RfpEditDialog({
                 <option value="">— Unassigned —</option>
                 {assigneeOptions.map((u) => (
                   <option key={u.id} value={u.id}>
-                    {(u.name ?? u.email) + ` (${u.role})`}
+                    {(u.name ?? u.email) + ' · ' + roleLabel(u.role)}
                   </option>
                 ))}
               </select>

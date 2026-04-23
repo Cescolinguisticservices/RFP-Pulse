@@ -224,13 +224,14 @@ function parseInvitableRole(value: string | undefined): Role {
   return upper as Role;
 }
 
-/** Roles that may own an RFP assignment. SUPER_ADMIN and READ_ONLY are excluded. */
+/** Roles that may own an RFP assignment. SUPER_ADMIN is excluded. */
 export const ASSIGNABLE_ROLES: Role[] = [
   Role.ADMIN,
   Role.RFP_MANAGER,
   Role.SME,
   Role.REVIEWER,
   Role.APPROVER,
+  Role.READ_ONLY,
 ];
 
 function parseAssignableRole(value: string | undefined): Role | null {

@@ -174,6 +174,18 @@ export function RfpList({
 
   return (
     <div className="flex flex-col gap-4">
+      {canManage && (
+        <div className="flex justify-end">
+          <Link
+            href="/uploads"
+            className={buttonVariants({ variant: 'default' })}
+            data-testid="rfp-create-new"
+          >
+            <Plus className="h-4 w-4" />
+            Create New RFP
+          </Link>
+        </div>
+      )}
       <div className="flex flex-col gap-3 rounded-md border bg-card p-4">
         <div className="flex flex-wrap items-end gap-3">
           <FilterField label="Search by RFP name">
@@ -229,8 +241,8 @@ export function RfpList({
               ))}
             </select>
           </FilterField>
-          <div className="ml-auto flex items-center gap-2">
-            {canManage && selected.size > 0 && (
+          {canManage && selected.size > 0 && (
+            <div className="ml-auto flex items-center gap-2">
               <Button
                 type="button"
                 variant="destructive"
@@ -245,18 +257,8 @@ export function RfpList({
                 )}
                 Delete {selected.size}
               </Button>
-            )}
-            {canManage && (
-              <Link
-                href="/uploads"
-                className={buttonVariants({ variant: 'default' })}
-                data-testid="rfp-create-new"
-              >
-                <Plus className="h-4 w-4" />
-                Create New RFP
-              </Link>
-            )}
-          </div>
+            </div>
+          )}
         </div>
         {deleteError && (
           <p className="text-xs text-destructive" data-testid="rfp-delete-error">
@@ -477,5 +479,8 @@ function sortValue(row: RfpListRow, key: SortKey): string | number | null {
 function formatDate(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  return `${mm}-${dd}-${yyyy}`;
 }
