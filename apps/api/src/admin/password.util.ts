@@ -7,10 +7,16 @@ import { randomBytes } from 'node:crypto';
  */
 export function generateTempPassword(length = 14): string {
   const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
-  const bytes = randomBytes(length);
+  const maxUnbiased = 256 - (256 % alphabet.length);
   let out = '';
-  for (let i = 0; i < length; i += 1) {
-    out += alphabet[bytes[i] % alphabet.length];
+  while (out.length < length) {
+    const buf = randomBytes(length);
+    for (let i = 0; i < buf.length && out.length < length; i += 1) {
+      const b = buf[i];
+      if (b < maxUnbiased) {
+        out += alphabet[b % alphabet.length];
+      }
+    }
   }
   return out;
 }
