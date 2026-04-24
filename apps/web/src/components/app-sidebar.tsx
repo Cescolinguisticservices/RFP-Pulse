@@ -3,6 +3,7 @@
 import {
   Building2,
   ClipboardList,
+  FileText,
   LayoutDashboard,
   LogOut,
   Radar,
@@ -31,6 +32,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard', label: 'RFP', icon: LayoutDashboard, testId: 'nav-dashboard' },
+  { href: '/proposals', label: 'Proposals', icon: FileText, testId: 'nav-proposals' },
   { href: '/tasks', label: 'My Tasks', icon: ClipboardList, testId: 'nav-tasks' },
   { href: '/competitors', label: 'Competitor Intel', icon: Radar, testId: 'nav-competitors' },
 ];
@@ -64,7 +66,7 @@ export function AppSidebar(): JSX.Element {
   const pathname = usePathname();
 
   return (
-    <aside className="flex h-screen w-60 shrink-0 flex-col border-r bg-card">
+    <aside className="flex h-full w-full flex-col overflow-y-auto">
       <div className="flex items-center gap-2 px-6 py-5">
         <div className="grid h-8 w-8 place-items-center rounded-md bg-primary text-primary-foreground">
           <Zap className="h-4 w-4" />

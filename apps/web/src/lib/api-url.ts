@@ -3,6 +3,6 @@ export function apiBaseUrl(): string {
   return (
     process.env.NEXT_PUBLIC_API_URL ??
     process.env.API_URL ??
-    `http://localhost:${process.env.API_PORT ?? 4000}`
+    `http://127.0.0.1:${process.env.API_PORT ?? 4000}`
   );
 }

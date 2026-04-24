@@ -9,7 +9,7 @@
  */
 import { hashSync } from 'bcryptjs';
 
-import { PrismaClient, Role, WorkflowState } from '@prisma/client';
+import { PrismaClient, RFPStatus, Role, WorkflowState } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -73,6 +73,29 @@ async function main(): Promise<void> {
     upsertProject(tenant.id, 'Demo RFP: Data Platform Rebuild', 'Initech', 30),
     upsertProject(tenant.id, 'Demo RFP: Zero-Trust Security Overhaul', 'Umbrella Analytics', 45),
   ]);
+  const proposalProjects = await Promise.all([
+    upsertProject(
+      tenant.id,
+      'Demo Proposal: Statewide Digital Services',
+      'City of Springfield',
+      -5,
+      RFPStatus.SUBMITTED,
+    ),
+    upsertProject(
+      tenant.id,
+      'Demo Proposal: Claims Automation Platform',
+      'Beacon Insurance Group',
+      -20,
+      RFPStatus.WON,
+    ),
+    upsertProject(
+      tenant.id,
+      'Demo Proposal: Public Transit Operations Suite',
+      'Metro Transit Authority',
+      -35,
+      RFPStatus.LOST,
+    ),
+  ]);
 
   const questionsByProject: Array<{ title: string; questions: string[] }> = [
     {
@@ -121,6 +144,113 @@ async function main(): Promise<void> {
     }
   }
 
+  const proposalSeeds: Array<{
+    title: string;
+    entries: Array<{ questionText: string; answer: string }>;
+  }> = [
+    {
+      title: 'Demo Proposal: Statewide Digital Services',
+      entries: [
+        {
+          questionText: 'Provide your implementation approach and rollout timeline.',
+          answer:
+            'We propose a phased 16-week rollout with discovery, pilot, and statewide launch phases. Each phase includes acceptance criteria, training, and a transition-to-operations checkpoint.',
+        },
+        {
+          questionText: 'Describe your SLA commitments and support model.',
+          answer:
+            'Our managed support model includes 24x7 critical incident coverage, a 99.9% uptime SLA, and monthly service review reports with corrective action tracking.',
+        },
+      ],
+    },
+    {
+      title: 'Demo Proposal: Claims Automation Platform',
+      entries: [
+        {
+          questionText: 'How will your platform improve claims turnaround time?',
+          answer:
+            'Using automated intake triage and rules-based adjudication, we project a 32% reduction in average turnaround within the first two quarters post go-live.',
+        },
+        {
+          questionText: 'Explain your security and compliance posture.',
+          answer:
+            'The platform enforces encryption in transit and at rest, role-based access controls, and complete audit logging aligned with SOC 2 and ISO 27001 control expectations.',
+        },
+      ],
+    },
+    {
+      title: 'Demo Proposal: Public Transit Operations Suite',
+      entries: [
+        {
+          questionText: 'Outline your integration strategy with legacy transit systems.',
+          answer:
+            'Our approach uses an API gateway with adapter services for dispatch, fare, and telemetry systems. We stage integrations by route group to minimize service disruption risk.',
+        },
+        {
+          questionText: 'Describe your change-management and training plan.',
+          answer:
+            'We deliver role-based onboarding paths for dispatchers, supervisors, and maintenance teams, plus on-site hypercare for the first 30 operational days.',
+        },
+      ],
+    },
+  ];
+
+  for (const proposal of proposalSeeds) {
+    const project = proposalProjects.find((p) => p.title === proposal.title);
+    if (!project) continue;
+
+    for (const entry of proposal.entries) {
+      const existingQuestion = await prisma.rFPQuestion.findFirst({
+        where: { projectId: project.id, questionText: entry.questionText },
+      });
+
+      const question = existingQuestion
+        ? await prisma.rFPQuestion.update({
+            where: { id: existingQuestion.id },
+            data: {
+              sectionPath: 'Proposal / Response',
+              isSelected: true,
+              assignedSmeId: admin.id,
+            },
+          })
+        : await prisma.rFPQuestion.create({
+            data: {
+              tenantId: tenant.id,
+              projectId: project.id,
+              questionText: entry.questionText,
+              sectionPath: 'Proposal / Response',
+              isSelected: true,
+              assignedSmeId: admin.id,
+            },
+          });
+
+      const existingAnswer = await prisma.rFPAnswer.findFirst({
+        where: { questionId: question.id },
+      });
+
+      if (existingAnswer) {
+        await prisma.rFPAnswer.update({
+          where: { id: existingAnswer.id },
+          data: {
+            content: entry.answer,
+            state: WorkflowState.APPROVED,
+            authorId: admin.id,
+          },
+        });
+      } else {
+        await prisma.rFPAnswer.create({
+          data: {
+            tenantId: tenant.id,
+            questionId: question.id,
+            content: entry.answer,
+            state: WorkflowState.APPROVED,
+            authorId: admin.id,
+          },
+        });
+      }
+    }
+  }
+
   // Seed a starter draft on the first question of the first project so the
   // Step 5 dashboard renders a non-empty "Drafting" badge before any Draft
   // Response click. Other questions intentionally have no answer row so the
@@ -159,6 +289,7 @@ async function main(): Promise<void> {
         admin: { id: admin.id, email: admin.email, role: admin.role },
         readOnly: { id: readOnly.id, email: readOnly.email, role: readOnly.role },
         projects: projects.map((p) => ({ id: p.id, title: p.title })),
+        proposalProjects: proposalProjects.map((p) => ({ id: p.id, title: p.title })),
         credentials: { password: DEMO_PASSWORD, note: 'dev-only; rotate in real deploys' },
       },
       null,
@@ -172,15 +303,23 @@ async function upsertProject(
   title: string,
   clientName: string,
   dueInDays: number,
+  status: RFPStatus = RFPStatus.DRAFT,
 ) {
   const existing = await prisma.rFPProject.findFirst({ where: { tenantId, title } });
-  if (existing) return existing;
+  const dueAt = new Date(Date.now() + dueInDays * 24 * 60 * 60 * 1000);
+  if (existing) {
+    return prisma.rFPProject.update({
+      where: { id: existing.id },
+      data: { clientName, dueAt, status },
+    });
+  }
   return prisma.rFPProject.create({
     data: {
       tenantId,
       title,
       clientName,
-      dueAt: new Date(Date.now() + dueInDays * 24 * 60 * 60 * 1000),
+      dueAt,
+      status,
     },
   });
 }

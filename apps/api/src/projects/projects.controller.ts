@@ -81,6 +81,12 @@ export class ProjectsController {
       questionText: string;
       sectionPath: string | null;
       isSelected: boolean;
+      answer: {
+        id: string;
+        content: string;
+        state: WorkflowState;
+        updatedAt: string;
+      } | null;
       assignee: ProjectUserRef | null;
       createdAt: string;
       updatedAt: string;
@@ -95,7 +101,11 @@ export class ProjectsController {
           orderBy: { createdAt: 'asc' },
           include: {
             assignedSme: { select: { id: true, email: true, name: true, role: true } },
-            answers: { select: { state: true }, orderBy: { updatedAt: 'desc' }, take: 1 },
+            answers: {
+              select: { id: true, content: true, state: true, updatedAt: true },
+              orderBy: { updatedAt: 'desc' },
+              take: 1,
+            },
           },
         },
         documents: {
@@ -146,6 +156,14 @@ export class ProjectsController {
           }
         : null,
       questions: project.questions.map((q) => ({
+        answer: q.answers[0]
+          ? {
+              id: q.answers[0].id,
+              content: q.answers[0].content,
+              state: q.answers[0].state,
+              updatedAt: q.answers[0].updatedAt.toISOString(),
+            }
+          : null,
         id: q.id,
         questionText: q.questionText,
         sectionPath: q.sectionPath,

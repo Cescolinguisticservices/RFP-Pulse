@@ -10,7 +10,7 @@
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "declaration": true,
-    "incremental": true,
+    "incremental": false,
     "sourceMap": true,
     "allowSyntheticDefaultImports": true,
     "types": ["node", "jest"]

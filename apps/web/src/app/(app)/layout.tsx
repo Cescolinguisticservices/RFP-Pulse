@@ -21,10 +21,12 @@ export default async function AppLayout({
   }
 
   return (
-    <div className="flex min-h-screen bg-muted/30">
-      <AppSidebar />
-      <main className="flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-6xl px-8 py-10">{children}</div>
+    <div className="flex h-screen bg-muted/30">
+      <section className="w-60 shrink-0 border-r bg-card">
+        <AppSidebar />
+      </section>
+      <main className="flex-1 overflow-y-auto p-6">
+        <div className="mx-auto w-full max-w-6xl space-y-6">{children}</div>
       </main>
     </div>
   );

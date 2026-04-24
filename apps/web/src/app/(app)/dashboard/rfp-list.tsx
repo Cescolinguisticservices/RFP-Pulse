@@ -182,7 +182,7 @@ export function RfpList({
             data-testid="rfp-create-new"
           >
             <Plus className="h-4 w-4" />
-            Create New RFP
+            Add New RFP
           </Link>
         </div>
       )}
