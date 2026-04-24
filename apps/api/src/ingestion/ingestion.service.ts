@@ -20,6 +20,7 @@ export interface UploadRfpInput {
   tenantId: string;
   /** User who initiated the upload — becomes the project's createdBy. */
   createdById: string;
+  projectId?: string | null;
   file: UploadedFile;
   /** Human-readable RFP name (becomes `RFPProject.title`). Required. */
   rfpName: string;
@@ -60,7 +61,7 @@ export class IngestionService {
    */
   async uploadRfp(input: UploadRfpInput) {
     const rfpName = input.rfpName.trim();
-    if (!rfpName) {
+    if (!input.projectId && !rfpName) {
       throw new BadRequestException('rfpName is required');
     }
     if (input.assigneeId) {
@@ -102,17 +103,24 @@ export class IngestionService {
     const previewPdfPayload = await toInlinePdfPreviewPayload(input.file, parsed.text);
 
     const { project, document } = await this.prisma.$transaction(async (tx) => {
-      const project = await tx.rFPProject.create({
-        data: {
-          tenantId: input.tenantId,
-          title: rfpName,
-          clientName: input.clientName ?? null,
-          dueAt: input.dueAt ?? null,
-          createdById: input.createdById,
-          assigneeId: input.assigneeId ?? null,
-          referenceProjectIds,
-        },
-      });
+      const project = input.projectId
+        ? await tx.rFPProject.findFirst({
+            where: { id: input.projectId, tenantId: input.tenantId },
+          })
+        : await tx.rFPProject.create({
+            data: {
+              tenantId: input.tenantId,
+              title: rfpName,
+              clientName: input.clientName ?? null,
+              dueAt: input.dueAt ?? null,
+              createdById: input.createdById,
+              assigneeId: input.assigneeId ?? null,
+              referenceProjectIds,
+            },
+          });
+      if (!project) {
+        throw new BadRequestException('projectId does not belong to this tenant');
+      }
       const document = await tx.document.create({
         data: {
           tenantId: input.tenantId,

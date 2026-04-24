@@ -3,7 +3,7 @@
 import { Loader2, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { Role, RFPStatus } from '@rfp-pulse/db';
 
@@ -110,13 +110,21 @@ export function RfpDetailPanel({
   const router = useRouter();
   const [project, setProject] = useState(initial.project);
   const [questions, setQuestions] = useState(initial.questions);
-  const [generating, setGenerating] = useState(false);
+
+  const [generatingQuestions, setGeneratingQuestions] = useState(false);
+  const [generatingAnswers, setGeneratingAnswers] = useState(false);
+  const [autoGenerating, setAutoGenerating] = useState(false);
+  const [savingQuestions, setSavingQuestions] = useState(false);
+
   const [genError, setGenError] = useState<string | null>(null);
-  const [answersGenerating, setAnswersGenerating] = useState(false);
   const [answersError, setAnswersError] = useState<string | null>(null);
   const [answersInfo, setAnswersInfo] = useState<string | null>(null);
+
+  const [pendingQuestionText, setPendingQuestionText] = useState<Record<string, string>>({});
   const [expandedAnswers, setExpandedAnswers] = useState<Set<string>>(new Set());
   const [editOpen, setEditOpen] = useState(false);
+
+  const autoGenStarted = useRef(false);
 
   const editRow: RfpListRow = useMemo(
     () => ({
@@ -136,7 +144,7 @@ export function RfpDetailPanel({
     [project],
   );
 
-  async function refresh(): Promise<void> {
+  const refresh = useCallback(async (): Promise<void> => {
     const res = await fetch(`${apiBase}/api/projects/${project.id}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
       cache: 'no-store',
@@ -145,10 +153,10 @@ export function RfpDetailPanel({
     const body = (await res.json()) as RfpDetail;
     setProject(body.project);
     setQuestions(body.questions);
-  }
+  }, [accessToken, apiBase, project.id]);
 
-  async function generateQuestions(): Promise<void> {
-    setGenerating(true);
+  const generateQuestions = useCallback(async (): Promise<void> => {
+    setGeneratingQuestions(true);
     setGenError(null);
     try {
       const res = await fetch(`${apiBase}/api/projects/${project.id}/questions/generate`, {
@@ -164,9 +172,45 @@ export function RfpDetailPanel({
     } catch (e) {
       setGenError(e instanceof Error ? e.message : 'Unknown error');
     } finally {
-      setGenerating(false);
+      setGeneratingQuestions(false);
     }
-  }
+  }, [accessToken, apiBase, project.id]);
+
+  const generateAnswers = useCallback(async (): Promise<void> => {
+    setGeneratingAnswers(true);
+    setAnswersError(null);
+    setAnswersInfo(null);
+    try {
+      const res = await fetch(`${apiBase}/api/projects/${project.id}/answers/generate`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { message?: string };
+        throw new Error(body.message ?? `Failed (${res.status})`);
+      }
+      const body = (await res.json()) as { message?: string };
+      if (body.message) setAnswersInfo(body.message);
+      await refresh();
+    } catch (e) {
+      setAnswersError(e instanceof Error ? e.message : 'Unknown error');
+    } finally {
+      setGeneratingAnswers(false);
+    }
+  }, [accessToken, apiBase, project.id, refresh]);
+
+  useEffect(() => {
+    if (!canManage) return;
+    if (autoGenStarted.current) return;
+    if (questions.length > 0) return;
+    autoGenStarted.current = true;
+    void (async () => {
+      setAutoGenerating(true);
+      await generateQuestions();
+      await generateAnswers();
+      setAutoGenerating(false);
+    })();
+  }, [canManage, questions.length, generateAnswers, generateQuestions]);
 
   async function patchQuestion(
     id: string,
@@ -188,6 +232,26 @@ export function RfpDetailPanel({
     setQuestions((prev) =>
       prev.map((q) => (q.id === id ? { ...q, ...updated, answer: q.answer ?? null } : q)),
     );
+  }
+
+  async function saveQuestionEdits(): Promise<void> {
+    const dirty = Object.entries(pendingQuestionText).filter(([id, text]) => {
+      const q = questions.find((x) => x.id === id);
+      return !!q && text.trim().length > 0 && text.trim() !== q.questionText;
+    });
+    if (dirty.length === 0) return;
+    setSavingQuestions(true);
+    setGenError(null);
+    try {
+      for (const [id, text] of dirty) {
+        await patchQuestion(id, { questionText: text.trim() });
+      }
+      setPendingQuestionText({});
+    } catch (e) {
+      setGenError(e instanceof Error ? e.message : 'Failed to save question edits');
+    } finally {
+      setSavingQuestions(false);
+    }
   }
 
   async function addQuestion(text: string, assigneeId: string | null): Promise<void> {
@@ -217,32 +281,11 @@ export function RfpDetailPanel({
       throw new Error(body.message ?? `Failed (${res.status})`);
     }
     setQuestions((prev) => prev.filter((q) => q.id !== id));
-  }
-
-  async function generateAnswers(): Promise<void> {
-    setAnswersGenerating(true);
-    setAnswersError(null);
-    setAnswersInfo(null);
-    try {
-      const res = await fetch(`${apiBase}/api/projects/${project.id}/answers/generate`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { message?: string };
-        throw new Error(body.message ?? `Failed (${res.status})`);
-      }
-      const body = (await res.json()) as {
-        generated: Array<{ questionId: string; content: string }>;
-        message?: string;
-      };
-      if (body.message) setAnswersInfo(body.message);
-      await refresh();
-    } catch (e) {
-      setAnswersError(e instanceof Error ? e.message : 'Unknown error');
-    } finally {
-      setAnswersGenerating(false);
-    }
+    setPendingQuestionText((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
   }
 
   return (
@@ -286,7 +329,7 @@ export function RfpDetailPanel({
 
       <Card data-testid="rfp-detail-content">
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base">RFP content</CardTitle>
+          <CardTitle className="text-base">RFP View</CardTitle>
           {initial.document && (
             <span className="text-xs text-muted-foreground">{initial.document.filename}</span>
           )}
@@ -302,86 +345,72 @@ export function RfpDetailPanel({
         </CardContent>
       </Card>
 
-      <Card data-testid="rfp-detail-questions">
+      <Card data-testid="rfp-detail-qa">
         <CardHeader className="flex flex-row items-center justify-between gap-4">
           <div className="flex flex-col gap-1">
-            <CardTitle className="text-base">AI-Generated Questions</CardTitle>
+            <CardTitle className="text-base">AI-Generated Questions & Answers</CardTitle>
             <p className="text-xs text-muted-foreground">
-              Select questions to include in the response; assign each to the person responsible.
-              Selected + assigned questions appear on the assignee&apos;s Tasks page.
+              Questions are generated first, then answers are drafted from selected reference
+              proposals.
             </p>
           </div>
           {canManage && (
-            <Button
-              type="button"
-              onClick={() => void generateQuestions()}
-              disabled={generating || !initial.document?.extractedText}
-              data-testid="rfp-generate-questions"
-              title={
-                !initial.document?.extractedText
-                  ? 'This RFP has no extracted text to analyze. Re-upload the RFP document.'
-                  : 'Use AI to extract questions from the RFP content'
-              }
-            >
-              {generating ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Sparkles className="h-4 w-4" />
-              )}
-              {generating ? 'Generating…' : 'Generate Questions'}
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void saveQuestionEdits()}
+                disabled={savingQuestions || Object.keys(pendingQuestionText).length === 0}
+                data-testid="rfp-save-questions"
+              >
+                {savingQuestions ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                Save Questions
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void generateQuestions()}
+                disabled={generatingQuestions || !initial.document?.extractedText}
+                data-testid="rfp-generate-questions"
+                title={
+                  !initial.document?.extractedText
+                    ? 'This RFP has no extracted text to analyze. Re-upload the RFP document.'
+                    : 'Use AI to extract questions from the RFP content'
+                }
+              >
+                {generatingQuestions ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="h-4 w-4" />
+                )}
+                {generatingQuestions ? 'Generating…' : 'Generate Questions'}
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void generateAnswers()}
+                disabled={generatingAnswers || questions.length === 0}
+                data-testid="rfp-generate-answers"
+              >
+                {generatingAnswers ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="h-4 w-4" />
+                )}
+                {generatingAnswers ? 'Generating…' : 'Generate Answers'}
+              </Button>
+            </div>
           )}
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
+          {autoGenerating && (
+            <p className="text-xs text-muted-foreground" data-testid="rfp-auto-generating">
+              AI is generating questions and answers...
+            </p>
+          )}
           {genError && (
             <p className="text-xs text-destructive" data-testid="rfp-generate-error">
               {genError}
             </p>
           )}
-          {questions.length === 0 ? (
-            <p className="text-sm text-muted-foreground" data-testid="rfp-questions-empty">
-              No questions yet.
-              {canManage ? ' Click \u201cGenerate Questions\u201d or add one manually below.' : ''}
-            </p>
-          ) : (
-            <ul className="flex flex-col divide-y">
-              {questions.map((q) => (
-                <QuestionRow
-                  key={q.id}
-                  question={q}
-                  users={users}
-                  canManage={canManage}
-                  onPatch={(patch) => patchQuestion(q.id, patch)}
-                  onDelete={() => deleteQuestion(q.id)}
-                />
-              ))}
-            </ul>
-          )}
-          {canManage && <AddQuestionRow users={users} onAdd={addQuestion} />}
-        </CardContent>
-      </Card>
-
-      <Card data-testid="rfp-detail-ai-answers">
-        <CardHeader className="flex flex-row items-center justify-between gap-4">
-          <div className="flex flex-col gap-1">
-            <CardTitle className="text-base">AI-Generated Answers</CardTitle>
-            <p className="text-xs text-muted-foreground">
-              Answers are generated after questions and grounded in selected reference proposals.
-            </p>
-          </div>
-          {canManage && (
-            <Button
-              type="button"
-              onClick={() => void generateAnswers()}
-              disabled={answersGenerating || questions.length === 0}
-              data-testid="rfp-generate-answers"
-            >
-              {answersGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-              {answersGenerating ? 'Generating…' : 'Generate Answers'}
-            </Button>
-          )}
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3">
           {answersInfo && (
             <p className="text-xs text-muted-foreground" data-testid="rfp-generate-answers-info">
               {answersInfo}
@@ -392,51 +421,40 @@ export function RfpDetailPanel({
               {answersError}
             </p>
           )}
+
           {questions.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Generate questions first to create answer drafts.
+            <p className="text-sm text-muted-foreground" data-testid="rfp-questions-empty">
+              No questions yet. {canManage ? 'AI will generate on load, or add one manually below.' : ''}
             </p>
           ) : (
-            <ul className="flex flex-col gap-3">
-              {questions.map((q) => {
-                const answer = q.answer?.content?.trim() ?? '';
-                const isLong = answer.length > 420;
-                const expanded = expandedAnswers.has(q.id);
-                const shown = !isLong || expanded ? answer : `${answer.slice(0, 420)}...`;
-                return (
-                  <li key={`answer-${q.id}`} className="rounded-md border p-3">
-                    <p className="text-sm font-medium">{q.questionText}</p>
-                    {answer ? (
-                      <>
-                        <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">{shown}</p>
-                        {isLong && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setExpandedAnswers((prev) => {
-                                const next = new Set(prev);
-                                if (next.has(q.id)) next.delete(q.id);
-                                else next.add(q.id);
-                                return next;
-                              })
-                            }
-                            className="mt-2 text-xs text-primary hover:underline"
-                            data-testid={`rfp-answer-expand-${q.id}`}
-                          >
-                            {expanded ? 'Show less' : 'Show more'}
-                          </button>
-                        )}
-                      </>
-                    ) : (
-                      <p className="mt-2 text-sm text-muted-foreground">
-                        No answer yet. {canManage ? 'Click Generate Answers.' : ''}
-                      </p>
-                    )}
-                  </li>
-                );
-              })}
+            <ul className="max-h-[520px] overflow-y-auto rounded-md border">
+              {questions.map((q) => (
+                <QuestionRow
+                  key={q.id}
+                  question={q}
+                  users={users}
+                  canManage={canManage}
+                  draftText={pendingQuestionText[q.id] ?? q.questionText}
+                  onDraftChange={(value) =>
+                    setPendingQuestionText((prev) => ({ ...prev, [q.id]: value }))
+                  }
+                  expanded={expandedAnswers.has(q.id)}
+                  onToggleExpand={() =>
+                    setExpandedAnswers((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(q.id)) next.delete(q.id);
+                      else next.add(q.id);
+                      return next;
+                    })
+                  }
+                  onPatch={(patch) => patchQuestion(q.id, patch)}
+                  onDelete={() => deleteQuestion(q.id)}
+                />
+              ))}
             </ul>
           )}
+
+          {canManage && <AddQuestionRow users={users} onAdd={addQuestion} />}
         </CardContent>
       </Card>
 
@@ -470,12 +488,20 @@ function QuestionRow({
   question,
   users,
   canManage,
+  draftText,
+  onDraftChange,
+  expanded,
+  onToggleExpand,
   onPatch,
   onDelete,
 }: {
   question: RfpDetailQuestion;
   users: TenantUser[];
   canManage: boolean;
+  draftText: string;
+  onDraftChange: (value: string) => void;
+  expanded: boolean;
+  onToggleExpand: () => void;
   onPatch: (patch: {
     questionText?: string;
     assignedSmeId?: string | null;
@@ -483,11 +509,8 @@ function QuestionRow({
   }) => Promise<void>;
   onDelete: () => Promise<void>;
 }): JSX.Element {
-  const [text, setText] = useState(question.questionText);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const textDirty = text !== question.questionText;
 
   async function run<T>(fn: () => Promise<T>): Promise<void> {
     setBusy(true);
@@ -501,8 +524,12 @@ function QuestionRow({
     }
   }
 
+  const answer = question.answer?.content?.trim() ?? '';
+  const isLong = answer.length > 420;
+  const shownAnswer = !isLong || expanded ? answer : `${answer.slice(0, 420)}...`;
+
   return (
-    <li className="flex flex-col gap-2 py-3" data-testid={`question-row-${question.id}`}>
+    <li className="flex flex-col gap-2 border-b p-3 last:border-b-0" data-testid={`question-row-${question.id}`}>
       <div className="flex items-start gap-3">
         <input
           type="checkbox"
@@ -514,20 +541,13 @@ function QuestionRow({
           data-testid={`question-checkbox-${question.id}`}
         />
         <div className="flex flex-1 flex-col gap-2">
-          <Input
-            value={text}
-            disabled={!canManage || busy}
-            onChange={(e) => setText(e.target.value)}
-            onBlur={() => {
-              if (textDirty) void run(() => onPatch({ questionText: text }));
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && textDirty) {
-                e.preventDefault();
-                void run(() => onPatch({ questionText: text }));
-              }
-            }}
+          <textarea
+            value={draftText}
+            disabled={!canManage}
+            onChange={(e) => onDraftChange(e.target.value)}
+            rows={3}
             data-testid={`question-text-${question.id}`}
+            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
           />
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <span>Assigned to</span>
@@ -555,8 +575,33 @@ function QuestionRow({
               </Badge>
             )}
           </div>
+
+          <div className="rounded-md bg-muted/40 p-3">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              AI Answer
+            </p>
+            {answer ? (
+              <>
+                <p className="mt-2 whitespace-pre-wrap text-sm text-foreground">{shownAnswer}</p>
+                {isLong && (
+                  <button
+                    type="button"
+                    onClick={onToggleExpand}
+                    className="mt-2 text-xs text-primary hover:underline"
+                    data-testid={`rfp-answer-expand-${question.id}`}
+                  >
+                    {expanded ? 'Show less' : 'Show more'}
+                  </button>
+                )}
+              </>
+            ) : (
+              <p className="mt-2 text-sm text-muted-foreground">No AI answer yet.</p>
+            )}
+          </div>
+
           {error && <p className="text-xs text-destructive">{error}</p>}
         </div>
+
         {canManage && (
           <button
             type="button"

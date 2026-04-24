@@ -21,6 +21,7 @@ import { IngestionService, type UploadedFile } from './ingestion.service';
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024; // 25 MB
 
 interface UploadRfpBody {
+  projectId?: string;
   rfpName?: string;
   clientName?: string;
   /** ISO date (YYYY-MM-DD) or full ISO timestamp. */
@@ -44,8 +45,9 @@ export class IngestionController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     assertFile(file);
+    const projectId = (body.projectId ?? '').trim() || null;
     const rfpName = (body.rfpName ?? '').trim();
-    if (!rfpName) {
+    if (!projectId && !rfpName) {
       throw new BadRequestException('rfpName is required');
     }
     const clientName = (body.clientName ?? '').trim() || null;
@@ -57,6 +59,7 @@ export class IngestionController {
       await this.ingestion.uploadRfp({
         tenantId: user.tenantId,
         createdById: user.id,
+        projectId,
         file,
         rfpName,
         clientName,

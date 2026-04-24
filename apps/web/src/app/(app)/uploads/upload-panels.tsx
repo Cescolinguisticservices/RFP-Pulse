@@ -7,18 +7,13 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ASSIGNABLE_ROLES, type AssignableRole, roleLabel } from '@/lib/roles';
 
-interface RfpUploadResult {
-  documentId: string;
+interface UploadResponse {
   projectId: string;
-  rfpName: string;
-  clientName: string | null;
-  dueAt: string | null;
-  assigneeId: string | null;
-  status: string;
-  filename: string;
-  textLength: number;
-  indexedChunks: number;
-  preview: string;
+}
+
+interface ProposalUploadSummary {
+  uploaded: Array<{ projectId: string; title: string }>;
+  failed: Array<{ filename: string; reason: string }>;
 }
 
 interface FoiaUploadResult {
@@ -67,10 +62,14 @@ function RfpUploader({
   apiBase: string;
 }): JSX.Element {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [file, setFile] = useState<File | null>(null);
+  const proposalsInputRef = useRef<HTMLInputElement>(null);
+  const [rfpFiles, setRfpFiles] = useState<File[]>([]);
+  const [proposalFiles, setProposalFiles] = useState<File[]>([]);
   const [rfpName, setRfpName] = useState('');
   const [clientName, setClientName] = useState('');
   const [dueDate, setDueDate] = useState('');
+  const [useUploadedRfpsForProposal, setUseUploadedRfpsForProposal] = useState(false);
+  const [aiInstructions, setAiInstructions] = useState('');
   const [role, setRole] = useState<AssignableRole | ''>('');
   const [assigneeId, setAssigneeId] = useState('');
   const [users, setUsers] = useState<AssignableUser[]>([]);
@@ -79,8 +78,10 @@ function RfpUploader({
   const [refsLoading, setRefsLoading] = useState(false);
   const [referenceProjectIds, setReferenceProjectIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [proposalBusy, setProposalBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<RfpUploadResult | null>(null);
+  const [savedMessage, setSavedMessage] = useState<string | null>(null);
+  const [proposalSummary, setProposalSummary] = useState<ProposalUploadSummary | null>(null);
 
   useEffect(() => {
     if (!role) {
@@ -143,48 +144,166 @@ function RfpUploader({
     return () => controller.abort();
   }, [accessToken, apiBase]);
 
-  const canSubmit = !!file && rfpName.trim().length > 0 && dueDate.length > 0 && !busy;
+  const canSubmit = rfpFiles.length > 0 && rfpName.trim().length > 0 && dueDate.length > 0 && !busy;
 
-  async function upload(): Promise<void> {
-    if (!file) return;
+  useEffect(() => {
+    if (!useUploadedRfpsForProposal) return;
+    setReferenceProjectIds([]);
+    setProposalFiles([]);
+    setProposalSummary(null);
+    if (proposalsInputRef.current) proposalsInputRef.current.value = '';
+  }, [useUploadedRfpsForProposal]);
+
+  function resetRfpForm(): void {
+    setRfpFiles([]);
+    setProposalFiles([]);
+    setProposalSummary(null);
+    setRfpName('');
+    setClientName('');
+    setDueDate('');
+    setRole('');
+    setAssigneeId('');
+    setReferenceProjectIds([]);
+    setUseUploadedRfpsForProposal(false);
+    setAiInstructions('');
+    setError(null);
+    if (inputRef.current) inputRef.current.value = '';
+    if (proposalsInputRef.current) proposalsInputRef.current.value = '';
+  }
+
+  async function saveRfp(): Promise<void> {
+    if (rfpFiles.length === 0) return;
     setBusy(true);
     setError(null);
-    setResult(null);
+    setSavedMessage(null);
     try {
-      const form = new FormData();
-      form.append('file', file);
-      form.append('rfpName', rfpName.trim());
-      if (clientName.trim()) form.append('clientName', clientName.trim());
-      if (dueDate) form.append('dueDate', dueDate);
-      if (assigneeId) form.append('assigneeId', assigneeId);
-      if (referenceProjectIds.length > 0) {
-        form.append('referenceProjectIds', JSON.stringify(referenceProjectIds));
+      let projectId: string | null = null;
+      for (let i = 0; i < rfpFiles.length; i += 1) {
+        const form = new FormData();
+        form.append('file', rfpFiles[i]);
+        if (projectId) {
+          form.append('projectId', projectId);
+        } else {
+          form.append('rfpName', rfpName.trim());
+          if (clientName.trim()) form.append('clientName', clientName.trim());
+          if (dueDate) form.append('dueDate', dueDate);
+          if (assigneeId) form.append('assigneeId', assigneeId);
+          if (!useUploadedRfpsForProposal && referenceProjectIds.length > 0) {
+            form.append('referenceProjectIds', JSON.stringify(referenceProjectIds));
+          }
+          form.append(
+            'useUploadedRfpsToGenerateProposal',
+            useUploadedRfpsForProposal ? 'true' : 'false',
+          );
+          if (aiInstructions.trim()) {
+            form.append('aiInstructions', aiInstructions.trim());
+          }
+        }
+
+        const res = await fetch(`${apiBase}/api/upload-rfp`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${accessToken}` },
+          body: form,
+        });
+        if (!res.ok) {
+          const body = await res.text();
+          throw new Error(
+            `Upload failed for ${rfpFiles[i].name}: ${res.status} ${res.statusText}${body ? ` - ${body}` : ''}`,
+          );
+        }
+        const body = (await res.json()) as UploadResponse;
+        if (!projectId) projectId = body.projectId;
       }
-      const res = await fetch(`${apiBase}/api/upload-rfp`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${accessToken}` },
-        body: form,
-      });
-      if (!res.ok) {
-        const body = await res.text();
-        throw new Error(
-          `Upload failed: ${res.status} ${res.statusText}${body ? ` — ${body}` : ''}`,
-        );
-      }
-      setResult((await res.json()) as RfpUploadResult);
-      setFile(null);
-      setRfpName('');
-      setClientName('');
-      setDueDate('');
-      setRole('');
-      setAssigneeId('');
-      setReferenceProjectIds([]);
-      if (inputRef.current) inputRef.current.value = '';
+      resetRfpForm();
+      setSavedMessage(`RFP saved with ${rfpFiles.length} file${rfpFiles.length === 1 ? '' : 's'}.`);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Unknown error');
     } finally {
       setBusy(false);
     }
+  }
+
+  const canUploadProposals =
+    !useUploadedRfpsForProposal && !proposalBusy && proposalFiles.length > 0;
+
+  async function uploadProposals(): Promise<void> {
+    if (!canUploadProposals) return;
+    setProposalBusy(true);
+    setError(null);
+    setProposalSummary(null);
+
+    const uploaded: Array<{ projectId: string; title: string }> = [];
+    const failed: Array<{ filename: string; reason: string }> = [];
+    const submissionDate = new Date().toISOString().slice(0, 10);
+
+    for (const proposalFile of proposalFiles) {
+      const proposalTitle = filenameToTitle(proposalFile.name);
+      try {
+        const form = new FormData();
+        form.append('file', proposalFile);
+        form.append('rfpName', proposalTitle);
+        if (clientName.trim()) form.append('clientName', clientName.trim());
+        form.append('dueDate', submissionDate);
+
+        const uploadRes = await fetch(`${apiBase}/api/upload-rfp`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${accessToken}` },
+          body: form,
+        });
+        if (!uploadRes.ok) {
+          const body = await uploadRes.text();
+          throw new Error(
+            `Upload failed: ${uploadRes.status} ${uploadRes.statusText}${body ? ` - ${body}` : ''}`,
+          );
+        }
+        const uploadBody = (await uploadRes.json()) as UploadResponse;
+
+        const patchRes = await fetch(`${apiBase}/api/projects/${uploadBody.projectId}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({
+            status: 'SUBMITTED',
+            dueDate: submissionDate,
+          }),
+        });
+        if (!patchRes.ok) {
+          const body = await patchRes.text();
+          throw new Error(
+            `Status update failed: ${patchRes.status} ${patchRes.statusText}${body ? ` - ${body}` : ''}`,
+          );
+        }
+
+        uploaded.push({ projectId: uploadBody.projectId, title: proposalTitle });
+      } catch (e) {
+        failed.push({
+          filename: proposalFile.name,
+          reason: e instanceof Error ? e.message : 'Unknown error',
+        });
+      }
+    }
+
+    if (uploaded.length > 0) {
+      setReferenceOptions((prev) => {
+        const existingIds = new Set(prev.map((item) => item.id));
+        const additions: ProjectOption[] = uploaded
+          .filter((item) => !existingIds.has(item.projectId))
+          .map((item) => ({
+            id: item.projectId,
+            title: item.title,
+            clientName: clientName.trim() || null,
+            status: 'SUBMITTED',
+          }));
+        return [...additions, ...prev];
+      });
+    }
+
+    setProposalSummary({ uploaded, failed });
+    setProposalFiles([]);
+    if (proposalsInputRef.current) proposalsInputRef.current.value = '';
+    setProposalBusy(false);
   }
 
   return (
@@ -206,11 +325,12 @@ function RfpUploader({
             type="text"
             value={rfpName}
             onChange={(e) => setRfpName(e.target.value)}
-            placeholder="City of Acme — IT modernization"
+            placeholder="City of Acme - IT modernization"
             data-testid="rfp-name-input"
             className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm"
           />
         </label>
+
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-xs font-medium text-muted-foreground">Client / issuing agency</span>
           <input
@@ -222,6 +342,7 @@ function RfpUploader({
             className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm"
           />
         </label>
+
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-xs font-medium text-muted-foreground">Due date *</span>
           <input
@@ -232,6 +353,7 @@ function RfpUploader({
             className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm"
           />
         </label>
+
         <div className="grid grid-cols-2 gap-3">
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-xs font-medium text-muted-foreground">Assign role</span>
@@ -241,7 +363,7 @@ function RfpUploader({
               data-testid="rfp-role-select"
               className="h-9 rounded-md border border-input bg-background px-2 py-1 text-sm"
             >
-              <option value="">—</option>
+              <option value="">-</option>
               {ASSIGNABLE_ROLES.map((r) => (
                 <option key={r} value={r}>
                   {roleLabel(r)}
@@ -249,6 +371,7 @@ function RfpUploader({
               ))}
             </select>
           </label>
+
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-xs font-medium text-muted-foreground">Assign to user</span>
             <select
@@ -262,7 +385,7 @@ function RfpUploader({
                 {!role
                   ? 'Pick a role first'
                   : usersLoading
-                    ? 'Loading…'
+                    ? 'Loading...'
                     : users.length === 0
                       ? 'No users in this role'
                       : 'Unassigned'}
@@ -275,11 +398,26 @@ function RfpUploader({
             </select>
           </label>
         </div>
+
+        <input
+          ref={inputRef}
+          type="file"
+          accept=".pdf,.docx,.xlsx,.xls,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain"
+          multiple
+          onChange={(e) => setRfpFiles(Array.from(e.target.files ?? []))}
+          data-testid="rfp-file-input"
+          className="block w-full text-sm file:mr-3 file:rounded-md file:border file:border-input file:bg-background file:px-3 file:py-1.5 file:text-sm file:font-medium hover:file:bg-accent"
+        />
+
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-xs font-medium text-muted-foreground">
             Reference proposals for AI answers
           </span>
-          <div className="max-h-40 overflow-y-auto rounded-md border border-input bg-background p-2">
+          <div
+            className={`max-h-40 overflow-y-auto rounded-md border border-input bg-background p-2 ${
+              useUploadedRfpsForProposal ? 'opacity-60' : ''
+            }`}
+          >
             {refsLoading ? (
               <p className="text-xs text-muted-foreground">Loading proposals...</p>
             ) : referenceOptions.length === 0 ? (
@@ -294,6 +432,7 @@ function RfpUploader({
                     <label key={opt.id} className="flex items-center gap-2 text-xs">
                       <input
                         type="checkbox"
+                        disabled={useUploadedRfpsForProposal}
                         checked={checked}
                         onChange={(e) =>
                           setReferenceProjectIds((prev) =>
@@ -315,50 +454,103 @@ function RfpUploader({
             )}
           </div>
         </label>
+
         <input
-          ref={inputRef}
+          ref={proposalsInputRef}
           type="file"
           accept=".pdf,.docx,.xlsx,.xls,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain"
-          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          data-testid="rfp-file-input"
-          className="block w-full text-sm file:mr-3 file:rounded-md file:border file:border-input file:bg-background file:px-3 file:py-1.5 file:text-sm file:font-medium hover:file:bg-accent"
+          multiple
+          disabled={useUploadedRfpsForProposal}
+          onChange={(e) => setProposalFiles(Array.from(e.target.files ?? []))}
+          data-testid="proposal-multi-file-input"
+          className="block w-full text-sm file:mr-3 file:rounded-md file:border file:border-input file:bg-background file:px-3 file:py-1.5 file:text-sm file:font-medium hover:file:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
         />
+
         <Button
           type="button"
-          onClick={upload}
-          disabled={!canSubmit}
-          data-testid="rfp-upload-button"
+          onClick={() => void uploadProposals()}
+          disabled={!canUploadProposals}
+          data-testid="proposal-multi-upload-button"
           className="self-start"
         >
-          {busy ? (
+          {proposalBusy ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
             <UploadCloud className="h-4 w-4" />
           )}
-          {busy ? 'Uploading…' : 'Upload RFP'}
+          {proposalBusy ? 'Uploading...' : 'Upload Proposals'}
         </Button>
+
+        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={useUploadedRfpsForProposal}
+            onChange={(e) => setUseUploadedRfpsForProposal(e.target.checked)}
+            data-testid="rfp-use-uploaded-rfps-checkbox"
+          />
+          Use uploaded Proposals to generate a proposal for the RFP
+        </label>
+
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-xs font-medium text-muted-foreground">AI instructions</span>
+          <textarea
+            value={aiInstructions}
+            onChange={(e) => setAiInstructions(e.target.value)}
+            rows={4}
+            data-testid="rfp-ai-instructions-input"
+            placeholder="Add specific instructions for the AI..."
+            className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+          />
+        </label>
+
         {error && (
           <p className="text-xs text-destructive" data-testid="rfp-upload-error">
             {error}
           </p>
         )}
-        {result && (
+        {savedMessage && (
+          <p className="text-xs text-emerald-700" data-testid="rfp-save-message">
+            {savedMessage}
+          </p>
+        )}
+
+        {proposalSummary && (
           <div
             className="rounded-md border bg-muted/30 p-3 text-xs"
-            data-testid="rfp-upload-result"
+            data-testid="proposal-upload-summary"
           >
-            <p className="font-medium">{result.rfpName}</p>
-            <p className="text-muted-foreground">
-              {result.filename} · Extracted {result.textLength.toLocaleString()} chars · Indexed{' '}
-              {result.indexedChunks} chunk{result.indexedChunks === 1 ? '' : 's'} into the knowledge
-              base.
+            <p className="font-medium">
+              Uploaded {proposalSummary.uploaded.length} proposal
+              {proposalSummary.uploaded.length === 1 ? '' : 's'}.
             </p>
-            <p className="mt-2 whitespace-pre-wrap text-muted-foreground">
-              {result.preview}
-              {result.preview.length >= 500 ? '…' : ''}
-            </p>
+            {proposalSummary.failed.length > 0 && (
+              <p className="mt-1 text-destructive">
+                Failed: {proposalSummary.failed.map((item) => item.filename).join(', ')}
+              </p>
+            )}
           </div>
         )}
+        <div className="mt-2 flex items-center gap-2">
+          <Button
+            type="button"
+            onClick={() => void saveRfp()}
+            disabled={!canSubmit}
+            data-testid="rfp-save-button"
+          >
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            {busy ? 'Saving...' : 'Save'}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={resetRfpForm}
+            disabled={busy}
+            data-testid="rfp-cancel-button"
+          >
+            Cancel
+          </Button>
+        </div>
+
       </CardContent>
     </Card>
   );
@@ -450,7 +642,7 @@ function FoiaUploader({
           ) : (
             <UploadCloud className="h-4 w-4" />
           )}
-          {busy ? 'Analyzing…' : 'Upload FOIA'}
+          {busy ? 'Analyzing...' : 'Upload FOIA'}
         </Button>
         {error && (
           <p className="text-xs text-destructive" data-testid="foia-upload-error">
@@ -483,4 +675,9 @@ function FoiaUploader({
       </CardContent>
     </Card>
   );
+}
+
+function filenameToTitle(filename: string): string {
+  const withoutExtension = filename.replace(/\.[^/.]+$/, '').trim();
+  return withoutExtension || 'Untitled Proposal';
 }
