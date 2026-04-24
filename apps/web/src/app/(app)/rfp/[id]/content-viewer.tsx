@@ -1,14 +1,13 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useMemo } from 'react';
 
 /**
- * Read-only viewer for an RFP's extracted content.
+ * Read-only viewer for uploaded RFP content.
  *
- * When the ingestion pipeline produced an HTML rendering (DOCX via mammoth),
- * we render that directly so headings / bold / italics / lists / tables keep
- * their formatting. Otherwise we fall back to the plain-text extraction and
- * convert blank lines into paragraphs.
+ * Preferred path: render the uploaded/converted PDF via react-pdf-viewer.
+ * Fallback: render extracted HTML/text when a PDF preview isn't available.
  */
 function textToHtml(text: string): string {
   const paragraphs = text
@@ -26,12 +25,29 @@ function textToHtml(text: string): string {
 }
 
 export function RfpContentViewer({
+  pdfBase64,
   html,
   text,
 }: {
+  mimeType?: string | null;
+  docxBase64?: string | null;
+  pdfBase64?: string | null;
   html?: string | null;
   text: string | null;
 }): JSX.Element {
+  const PdfViewer = useMemo(
+    () =>
+      dynamic(() => import('./pdf-viewer-client').then((m) => m.PdfViewerClient), {
+        ssr: false,
+      }),
+    [],
+  );
+
+  const fileUrl = useMemo(
+    () => (pdfBase64 ? `data:application/pdf;base64,${pdfBase64}` : null),
+    [pdfBase64],
+  );
+
   const content = useMemo(() => {
     if (html && html.trim().length > 0) return html;
     if (text && text.trim().length > 0) return textToHtml(text);
@@ -40,13 +56,17 @@ export function RfpContentViewer({
 
   return (
     <div
-      className="max-h-[640px] overflow-y-auto rounded-md border bg-background p-4"
+      className="max-h-[680px] overflow-y-auto rounded-md border bg-background p-2"
       data-testid="rfp-content-viewer"
     >
-      <div
-        className="prose prose-sm max-w-none text-sm leading-relaxed dark:prose-invert"
-        dangerouslySetInnerHTML={{ __html: content }}
-      />
+      {fileUrl ? (
+        <PdfViewer fileUrl={fileUrl} />
+      ) : (
+        <div
+          className="prose prose-sm max-w-none p-2 text-sm leading-relaxed dark:prose-invert"
+          dangerouslySetInnerHTML={{ __html: content }}
+        />
+      )}
     </div>
   );
 }

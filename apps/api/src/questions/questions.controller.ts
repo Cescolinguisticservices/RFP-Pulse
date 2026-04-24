@@ -57,6 +57,12 @@ export interface ProjectQuestionRow {
   updatedAt: string;
 }
 
+interface ReferenceAnswerSnippet {
+  projectTitle: string;
+  questionText: string;
+  answerText: string;
+}
+
 const MANAGE_ROLES = [Role.ADMIN, Role.RFP_MANAGER] as const;
 
 @Controller('api')
@@ -274,6 +280,135 @@ export class QuestionsController {
     return { created, skipped, questions: allRows };
   }
 
+  /**
+   * Generate AI answer drafts for all questions in an RFP project, grounded in
+   * selected reference proposal projects.
+   *
+   * Behavior:
+   * - If no references are linked on the RFP, returns empty generated list.
+   * - For each question, picks the most relevant reference snippets using
+   *   lightweight token overlap and drafts a grounded response.
+   */
+  @Post('projects/:id/answers/generate')
+  @Roles(Role.ADMIN, Role.RFP_MANAGER)
+  async generateAnswers(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') projectId: string,
+  ): Promise<{
+    generated: Array<{
+      questionId: string;
+      questionText: string;
+      answerId: string;
+      content: string;
+      groundedFrom: number;
+      updatedAt: string;
+    }>;
+    message?: string;
+  }> {
+    const project = await this.prisma.rFPProject.findFirst({
+      where: { id: projectId, tenantId: user.tenantId },
+      select: { id: true, title: true, referenceProjectIds: true },
+    });
+    if (!project) throw new NotFoundException('RFP not found');
+
+    const referenceIds = project.referenceProjectIds ?? [];
+    if (referenceIds.length === 0) {
+      return {
+        generated: [],
+        message: 'No reference proposals selected for this RFP.',
+      };
+    }
+
+    const questions = await this.prisma.rFPQuestion.findMany({
+      where: { projectId: project.id, tenantId: user.tenantId },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, questionText: true },
+    });
+    if (questions.length === 0) {
+      return { generated: [], message: 'No questions available to generate answers for.' };
+    }
+
+    const refRows = await this.prisma.rFPQuestion.findMany({
+      where: { projectId: { in: referenceIds }, tenantId: user.tenantId },
+      include: {
+        project: { select: { title: true } },
+        answers: {
+          orderBy: { updatedAt: 'desc' },
+          take: 1,
+          select: { content: true },
+        },
+      },
+    });
+
+    const snippets: ReferenceAnswerSnippet[] = refRows
+      .map((row) => ({
+        projectTitle: row.project.title,
+        questionText: row.questionText,
+        answerText: row.answers[0]?.content ?? '',
+      }))
+      .filter((row) => row.answerText.trim().length > 0);
+
+    if (snippets.length === 0) {
+      return {
+        generated: [],
+        message: 'Reference proposals do not have usable answers yet.',
+      };
+    }
+
+    const generated: Array<{
+      questionId: string;
+      questionText: string;
+      answerId: string;
+      content: string;
+      groundedFrom: number;
+      updatedAt: string;
+    }> = [];
+
+    for (const q of questions) {
+      const best = topReferenceSnippets(q.questionText, snippets, 2);
+      const content =
+        best.length > 0
+          ? buildGroundedAnswer(q.questionText, best)
+          : 'No closely related content was found in the selected reference proposals.';
+
+      const existing = await this.prisma.rFPAnswer.findFirst({
+        where: { questionId: q.id, tenantId: user.tenantId },
+        orderBy: { updatedAt: 'desc' },
+        select: { id: true },
+      });
+
+      const saved = existing
+        ? await this.prisma.rFPAnswer.update({
+            where: { id: existing.id },
+            data: {
+              content,
+              state: WorkflowState.DRAFTING,
+              authorId: user.id,
+            },
+          })
+        : await this.prisma.rFPAnswer.create({
+            data: {
+              tenantId: user.tenantId,
+              questionId: q.id,
+              content,
+              state: WorkflowState.DRAFTING,
+              authorId: user.id,
+            },
+          });
+
+      generated.push({
+        questionId: q.id,
+        questionText: q.questionText,
+        answerId: saved.id,
+        content: saved.content,
+        groundedFrom: best.length,
+        updatedAt: saved.updatedAt.toISOString(),
+      });
+    }
+
+    return { generated };
+  }
+
   /** Manually add a question to an RFP. */
   @Post('projects/:id/questions')
   @Roles(Role.ADMIN, Role.RFP_MANAGER)
@@ -458,3 +593,55 @@ function providerNameToEnum(name: string): LLMProvider {
 
 // Used by MANAGE_ROLES (prevents TS unused warning when decorators are evaluated at runtime).
 void MANAGE_ROLES;
+
+function topReferenceSnippets(
+  question: string,
+  snippets: ReferenceAnswerSnippet[],
+  take: number,
+): ReferenceAnswerSnippet[] {
+  const qTokens = tokenSet(question);
+  const scored = snippets
+    .map((s) => ({ snippet: s, score: overlapScore(qTokens, tokenSet(s.questionText)) }))
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, take)
+    .map((x) => x.snippet);
+  return scored;
+}
+
+function buildGroundedAnswer(question: string, refs: ReferenceAnswerSnippet[]): string {
+  const lines: string[] = [];
+  lines.push(`Draft answer for: ${question}`);
+  lines.push('');
+  lines.push('Grounded reference context:');
+  for (const r of refs) {
+    lines.push(`- ${r.projectTitle}: ${trimForAnswer(r.answerText)}`);
+  }
+  lines.push('');
+  lines.push(
+    'Consolidated response: Based on the selected reference proposals, this response aligns with prior approved positioning and implementation patterns while tailoring scope to the current requirement.',
+  );
+  return lines.join('\n');
+}
+
+function trimForAnswer(text: string): string {
+  const t = text.replace(/\s+/g, ' ').trim();
+  return t.length > 280 ? `${t.slice(0, 277)}...` : t;
+}
+
+function tokenSet(text: string): Set<string> {
+  const tokens = text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter((w) => w.length > 2);
+  return new Set(tokens);
+}
+
+function overlapScore(a: Set<string>, b: Set<string>): number {
+  let hits = 0;
+  for (const t of a) {
+    if (b.has(t)) hits += 1;
+  }
+  return hits;
+}

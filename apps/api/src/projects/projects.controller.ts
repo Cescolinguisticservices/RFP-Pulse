@@ -34,6 +34,7 @@ export interface UpdateProjectBody {
   status?: unknown;
   assigneeId?: unknown;
   createdById?: unknown;
+  referenceProjectIds?: unknown;
 }
 
 export interface ProjectSummary {
@@ -41,6 +42,7 @@ export interface ProjectSummary {
   title: string;
   clientName: string | null;
   dueAt: string | null;
+  referenceProjectIds: string[];
   status: RFPStatus;
   createdBy: ProjectUserRef | null;
   assignee: ProjectUserRef | null;
@@ -73,6 +75,8 @@ export class ProjectsController {
       filename: string;
       mimeType: string;
       sizeBytes: number;
+      docxBase64: string | null;
+      pdfBase64: string | null;
       extractedText: string | null;
       extractedHtml: string | null;
     } | null;
@@ -137,6 +141,7 @@ export class ProjectsController {
         title: project.title,
         clientName: project.clientName,
         dueAt: project.dueAt ? project.dueAt.toISOString() : null,
+        referenceProjectIds: project.referenceProjectIds,
         status: project.status,
         createdBy: project.createdBy ?? null,
         assignee: project.assignee ?? null,
@@ -151,6 +156,8 @@ export class ProjectsController {
             filename: doc.filename,
             mimeType: doc.mimeType,
             sizeBytes: doc.sizeBytes,
+            docxBase64: parseInlineDocxBase64(doc.s3Key),
+            pdfBase64: parseInlinePdfBase64(doc.s3Key),
             extractedText: doc.extractedText,
             extractedHtml: doc.extractedHtml,
           }
@@ -211,6 +218,7 @@ export class ProjectsController {
           title: p.title,
           clientName: p.clientName,
           dueAt: p.dueAt ? p.dueAt.toISOString() : null,
+          referenceProjectIds: p.referenceProjectIds,
           status: p.status,
           createdBy: p.createdBy ?? null,
           assignee: p.assignee ?? null,
@@ -276,6 +284,7 @@ export class ProjectsController {
         title: updated.title,
         clientName: updated.clientName,
         dueAt: updated.dueAt ? updated.dueAt.toISOString() : null,
+        referenceProjectIds: updated.referenceProjectIds,
         status: updated.status,
         createdBy: updated.createdBy ?? null,
         assignee: updated.assignee ?? null,
@@ -297,6 +306,7 @@ export class ProjectsController {
     status?: RFPStatus;
     createdById?: string | null;
     assigneeId?: string | null;
+    referenceProjectIds?: string[];
   }> {
     const data: {
       title?: string;
@@ -305,6 +315,7 @@ export class ProjectsController {
       status?: RFPStatus;
       createdById?: string | null;
       assigneeId?: string | null;
+      referenceProjectIds?: string[];
     } = {};
 
     if (body.title !== undefined) {
@@ -334,10 +345,43 @@ export class ProjectsController {
     if (body.createdById !== undefined) {
       data.createdById = await this.resolveTenantUserId(body.createdById, tenantId, 'createdById');
     }
+    if (body.referenceProjectIds !== undefined) {
+      data.referenceProjectIds = await this.parseReferenceProjectIds(body.referenceProjectIds, tenantId);
+    }
     if (Object.keys(data).length === 0) {
       throw new BadRequestException('no updatable fields provided');
     }
     return data;
+  }
+
+  private async parseReferenceProjectIds(value: unknown, tenantId: string): Promise<string[]> {
+    if (value === null) return [];
+    if (!Array.isArray(value)) {
+      throw new BadRequestException('referenceProjectIds must be an array of strings');
+    }
+    const ids = Array.from(
+      new Set(
+        value
+          .filter((v): v is string => typeof v === 'string')
+          .map((v) => v.trim())
+          .filter((v) => v.length > 0),
+      ),
+    );
+    if (ids.length !== value.length) {
+      throw new BadRequestException('referenceProjectIds must contain only non-empty strings');
+    }
+    if (ids.length === 0) return ids;
+    const refs = await this.prisma.rFPProject.findMany({
+      where: { id: { in: ids }, tenantId },
+      select: { id: true },
+    });
+    const found = new Set(refs.map((r) => r.id));
+    for (const id of ids) {
+      if (!found.has(id)) {
+        throw new BadRequestException(`referenceProjectId ${id} does not belong to this tenant`);
+      }
+    }
+    return ids;
   }
 
   private async resolveTenantUserId(
@@ -383,6 +427,22 @@ export class ProjectsController {
     });
     return { deleted: result.count };
   }
+}
+
+function parseInlineDocxBase64(s3Key: string | null): string | null {
+  if (!s3Key) return null;
+  const prefix = 'inline-docx-b64:';
+  if (!s3Key.startsWith(prefix)) return null;
+  const payload = s3Key.slice(prefix.length).trim();
+  return payload.length > 0 ? payload : null;
+}
+
+function parseInlinePdfBase64(s3Key: string | null): string | null {
+  if (!s3Key) return null;
+  const prefix = 'inline-pdf-b64:';
+  if (!s3Key.startsWith(prefix)) return null;
+  const payload = s3Key.slice(prefix.length).trim();
+  return payload.length > 0 ? payload : null;
 }
 
 function parseNullableDate(value: unknown, field: string): Date | null {

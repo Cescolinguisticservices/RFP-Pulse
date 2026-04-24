@@ -26,6 +26,8 @@ interface UploadRfpBody {
   /** ISO date (YYYY-MM-DD) or full ISO timestamp. */
   dueDate?: string;
   assigneeId?: string;
+  /** CSV or JSON array of project ids used as reference proposals. */
+  referenceProjectIds?: string;
 }
 
 @Controller('api')
@@ -49,6 +51,7 @@ export class IngestionController {
     const clientName = (body.clientName ?? '').trim() || null;
     const dueAt = parseDueAt(body.dueDate);
     const assigneeId = (body.assigneeId ?? '').trim() || null;
+    const referenceProjectIds = parseReferenceProjectIds(body.referenceProjectIds);
 
     const { document, project, extractedText, metadata, indexedChunks } =
       await this.ingestion.uploadRfp({
@@ -59,6 +62,7 @@ export class IngestionController {
         clientName,
         dueAt,
         assigneeId,
+        referenceProjectIds,
       });
     return {
       documentId: document.id,
@@ -67,6 +71,7 @@ export class IngestionController {
       clientName: project.clientName,
       dueAt: project.dueAt ? project.dueAt.toISOString() : null,
       assigneeId: project.assigneeId,
+      referenceProjectIds: project.referenceProjectIds,
       status: project.status,
       filename: document.filename,
       mimeType: document.mimeType,
@@ -119,4 +124,33 @@ function parseDueAt(value: string | undefined): Date | null {
     throw new BadRequestException(`dueDate "${trimmed}" is not a valid date`);
   }
   return date;
+}
+
+function parseReferenceProjectIds(raw: string | undefined): string[] {
+  const trimmed = (raw ?? '').trim();
+  if (!trimmed) return [];
+  if (trimmed.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      if (!Array.isArray(parsed)) return [];
+      return Array.from(
+        new Set(
+          parsed
+            .filter((v): v is string => typeof v === 'string')
+            .map((v) => v.trim())
+            .filter((v) => v.length > 0),
+        ),
+      );
+    } catch {
+      return [];
+    }
+  }
+  return Array.from(
+    new Set(
+      trimmed
+        .split(',')
+        .map((v) => v.trim())
+        .filter((v) => v.length > 0),
+    ),
+  );
 }

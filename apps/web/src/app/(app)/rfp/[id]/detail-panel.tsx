@@ -51,6 +51,8 @@ export interface RfpDetailDocument {
   filename: string;
   mimeType: string;
   sizeBytes: number;
+  docxBase64: string | null;
+  pdfBase64: string | null;
   extractedText: string | null;
   extractedHtml: string | null;
 }
@@ -60,6 +62,12 @@ export interface RfpDetailQuestion {
   questionText: string;
   sectionPath: string | null;
   isSelected: boolean;
+  answer: {
+    id: string;
+    content: string;
+    state: string;
+    updatedAt: string;
+  } | null;
   assignee: DetailUserRef | null;
   createdAt: string;
   updatedAt: string;
@@ -104,6 +112,10 @@ export function RfpDetailPanel({
   const [questions, setQuestions] = useState(initial.questions);
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
+  const [answersGenerating, setAnswersGenerating] = useState(false);
+  const [answersError, setAnswersError] = useState<string | null>(null);
+  const [answersInfo, setAnswersInfo] = useState<string | null>(null);
+  const [expandedAnswers, setExpandedAnswers] = useState<Set<string>>(new Set());
   const [editOpen, setEditOpen] = useState(false);
 
   const editRow: RfpListRow = useMemo(
@@ -172,8 +184,10 @@ export function RfpDetailPanel({
       const body = (await res.json().catch(() => ({}))) as { message?: string };
       throw new Error(body.message ?? `Failed (${res.status})`);
     }
-    const updated = (await res.json()) as RfpDetailQuestion;
-    setQuestions((prev) => prev.map((q) => (q.id === id ? updated : q)));
+    const updated = (await res.json()) as Omit<RfpDetailQuestion, 'answer'>;
+    setQuestions((prev) =>
+      prev.map((q) => (q.id === id ? { ...q, ...updated, answer: q.answer ?? null } : q)),
+    );
   }
 
   async function addQuestion(text: string, assigneeId: string | null): Promise<void> {
@@ -189,8 +203,8 @@ export function RfpDetailPanel({
       const body = (await res.json().catch(() => ({}))) as { message?: string };
       throw new Error(body.message ?? `Failed (${res.status})`);
     }
-    const created = (await res.json()) as RfpDetailQuestion;
-    setQuestions((prev) => [...prev, created]);
+    const created = (await res.json()) as Omit<RfpDetailQuestion, 'answer'>;
+    setQuestions((prev) => [...prev, { ...created, answer: null }]);
   }
 
   async function deleteQuestion(id: string): Promise<void> {
@@ -203,6 +217,32 @@ export function RfpDetailPanel({
       throw new Error(body.message ?? `Failed (${res.status})`);
     }
     setQuestions((prev) => prev.filter((q) => q.id !== id));
+  }
+
+  async function generateAnswers(): Promise<void> {
+    setAnswersGenerating(true);
+    setAnswersError(null);
+    setAnswersInfo(null);
+    try {
+      const res = await fetch(`${apiBase}/api/projects/${project.id}/answers/generate`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { message?: string };
+        throw new Error(body.message ?? `Failed (${res.status})`);
+      }
+      const body = (await res.json()) as {
+        generated: Array<{ questionId: string; content: string }>;
+        message?: string;
+      };
+      if (body.message) setAnswersInfo(body.message);
+      await refresh();
+    } catch (e) {
+      setAnswersError(e instanceof Error ? e.message : 'Unknown error');
+    } finally {
+      setAnswersGenerating(false);
+    }
   }
 
   return (
@@ -253,6 +293,9 @@ export function RfpDetailPanel({
         </CardHeader>
         <CardContent>
           <RfpContentViewer
+            mimeType={initial.document?.mimeType ?? null}
+            docxBase64={initial.document?.docxBase64 ?? null}
+            pdfBase64={initial.document?.pdfBase64 ?? null}
             html={initial.document?.extractedHtml ?? null}
             text={initial.document?.extractedText ?? null}
           />
@@ -262,7 +305,7 @@ export function RfpDetailPanel({
       <Card data-testid="rfp-detail-questions">
         <CardHeader className="flex flex-row items-center justify-between gap-4">
           <div className="flex flex-col gap-1">
-            <CardTitle className="text-base">Questions</CardTitle>
+            <CardTitle className="text-base">AI-Generated Questions</CardTitle>
             <p className="text-xs text-muted-foreground">
               Select questions to include in the response; assign each to the person responsible.
               Selected + assigned questions appear on the assignee&apos;s Tasks page.
@@ -315,6 +358,85 @@ export function RfpDetailPanel({
             </ul>
           )}
           {canManage && <AddQuestionRow users={users} onAdd={addQuestion} />}
+        </CardContent>
+      </Card>
+
+      <Card data-testid="rfp-detail-ai-answers">
+        <CardHeader className="flex flex-row items-center justify-between gap-4">
+          <div className="flex flex-col gap-1">
+            <CardTitle className="text-base">AI-Generated Answers</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Answers are generated after questions and grounded in selected reference proposals.
+            </p>
+          </div>
+          {canManage && (
+            <Button
+              type="button"
+              onClick={() => void generateAnswers()}
+              disabled={answersGenerating || questions.length === 0}
+              data-testid="rfp-generate-answers"
+            >
+              {answersGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              {answersGenerating ? 'Generating…' : 'Generate Answers'}
+            </Button>
+          )}
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          {answersInfo && (
+            <p className="text-xs text-muted-foreground" data-testid="rfp-generate-answers-info">
+              {answersInfo}
+            </p>
+          )}
+          {answersError && (
+            <p className="text-xs text-destructive" data-testid="rfp-generate-answers-error">
+              {answersError}
+            </p>
+          )}
+          {questions.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Generate questions first to create answer drafts.
+            </p>
+          ) : (
+            <ul className="flex flex-col gap-3">
+              {questions.map((q) => {
+                const answer = q.answer?.content?.trim() ?? '';
+                const isLong = answer.length > 420;
+                const expanded = expandedAnswers.has(q.id);
+                const shown = !isLong || expanded ? answer : `${answer.slice(0, 420)}...`;
+                return (
+                  <li key={`answer-${q.id}`} className="rounded-md border p-3">
+                    <p className="text-sm font-medium">{q.questionText}</p>
+                    {answer ? (
+                      <>
+                        <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">{shown}</p>
+                        {isLong && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setExpandedAnswers((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(q.id)) next.delete(q.id);
+                                else next.add(q.id);
+                                return next;
+                              })
+                            }
+                            className="mt-2 text-xs text-primary hover:underline"
+                            data-testid={`rfp-answer-expand-${q.id}`}
+                          >
+                            {expanded ? 'Show less' : 'Show more'}
+                          </button>
+                        )}
+                      </>
+                    ) : (
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        No answer yet. {canManage ? 'Click Generate Answers.' : ''}
+                      </p>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </CardContent>
       </Card>
 

@@ -13,6 +13,7 @@ import { rfpStatusLabel, rfpStatusVariant } from '@/lib/rfp-status';
 
 import type { ProposalListRow } from '../proposal-list';
 import { ProposalEditDialog } from '../proposal-edit-dialog';
+import { RfpContentViewer } from '../../rfp/[id]/content-viewer';
 
 type ProposalStatus = Extract<RFPStatus, 'SUBMITTED' | 'WON' | 'LOST'>;
 
@@ -49,6 +50,16 @@ export interface ProposalDetailQuestion {
 
 export interface ProposalDetailResponse {
   project: ProposalDetailProject;
+  document: {
+    id: string;
+    filename: string;
+    mimeType: string;
+    sizeBytes: number;
+    docxBase64: string | null;
+    pdfBase64: string | null;
+    extractedText: string | null;
+    extractedHtml: string | null;
+  } | null;
   questions: ProposalDetailQuestion[];
 }
 
@@ -65,6 +76,7 @@ export function ProposalDetailPanel({
 }): JSX.Element {
   const router = useRouter();
   const [project, setProject] = useState(initial.project);
+  const [document, setDocument] = useState(initial.document);
   const [questions, setQuestions] = useState(initial.questions);
   const [editOpen, setEditOpen] = useState(false);
 
@@ -105,6 +117,7 @@ export function ProposalDetailPanel({
     if (!res.ok) return;
     const body = (await res.json()) as ProposalDetailResponse;
     setProject(body.project);
+    setDocument(body.document);
     setQuestions(body.questions);
   }
 
@@ -144,6 +157,22 @@ export function ProposalDetailPanel({
           <MetaField label="Client Name" value={project.clientName ?? '-'} />
           <MetaField label="Submission Date" value={formatDate(project.dueAt ?? project.updatedAt)} />
           <MetaField label="Status" value={rfpStatusLabel(project.status)} />
+        </CardContent>
+      </Card>
+
+      <Card data-testid="proposal-detail-document">
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle className="text-base">Uploaded Document</CardTitle>
+          {document && <span className="text-xs text-muted-foreground">{document.filename}</span>}
+        </CardHeader>
+        <CardContent>
+          <RfpContentViewer
+            mimeType={document?.mimeType ?? null}
+            docxBase64={document?.docxBase64 ?? null}
+            pdfBase64={document?.pdfBase64 ?? null}
+            html={document?.extractedHtml ?? null}
+            text={document?.extractedText ?? null}
+          />
         </CardContent>
       </Card>
 

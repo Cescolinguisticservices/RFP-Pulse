@@ -37,6 +37,13 @@ interface AssignableUser {
   role: string;
 }
 
+interface ProjectOption {
+  id: string;
+  title: string;
+  clientName: string | null;
+  status: string;
+}
+
 export function UploadPanels({
   accessToken,
   apiBase,
@@ -68,6 +75,9 @@ function RfpUploader({
   const [assigneeId, setAssigneeId] = useState('');
   const [users, setUsers] = useState<AssignableUser[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
+  const [referenceOptions, setReferenceOptions] = useState<ProjectOption[]>([]);
+  const [refsLoading, setRefsLoading] = useState(false);
+  const [referenceProjectIds, setReferenceProjectIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<RfpUploadResult | null>(null);
@@ -101,6 +111,38 @@ function RfpUploader({
     return () => controller.abort();
   }, [role, accessToken, apiBase]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    setRefsLoading(true);
+    fetch(`${apiBase}/api/projects`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      signal: controller.signal,
+    })
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`Failed to load proposals: ${res.status}`);
+        const body = (await res.json()) as {
+          projects: Array<{
+            id: string;
+            title: string;
+            clientName: string | null;
+            status: string;
+          }>;
+        };
+        const proposals = body.projects.filter((p) =>
+          ['SUBMITTED', 'WON', 'LOST'].includes(p.status),
+        );
+        setReferenceOptions(proposals);
+      })
+      .catch((e) => {
+        if (controller.signal.aborted) return;
+        setError(e instanceof Error ? e.message : 'Failed to load proposals');
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setRefsLoading(false);
+      });
+    return () => controller.abort();
+  }, [accessToken, apiBase]);
+
   const canSubmit = !!file && rfpName.trim().length > 0 && dueDate.length > 0 && !busy;
 
   async function upload(): Promise<void> {
@@ -115,6 +157,9 @@ function RfpUploader({
       if (clientName.trim()) form.append('clientName', clientName.trim());
       if (dueDate) form.append('dueDate', dueDate);
       if (assigneeId) form.append('assigneeId', assigneeId);
+      if (referenceProjectIds.length > 0) {
+        form.append('referenceProjectIds', JSON.stringify(referenceProjectIds));
+      }
       const res = await fetch(`${apiBase}/api/upload-rfp`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${accessToken}` },
@@ -133,6 +178,7 @@ function RfpUploader({
       setDueDate('');
       setRole('');
       setAssigneeId('');
+      setReferenceProjectIds([]);
       if (inputRef.current) inputRef.current.value = '';
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Unknown error');
@@ -229,6 +275,46 @@ function RfpUploader({
             </select>
           </label>
         </div>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-xs font-medium text-muted-foreground">
+            Reference proposals for AI answers
+          </span>
+          <div className="max-h-40 overflow-y-auto rounded-md border border-input bg-background p-2">
+            {refsLoading ? (
+              <p className="text-xs text-muted-foreground">Loading proposals...</p>
+            ) : referenceOptions.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                No proposal records available (Submitted/Won/Lost).
+              </p>
+            ) : (
+              <div className="flex flex-col gap-1">
+                {referenceOptions.map((opt) => {
+                  const checked = referenceProjectIds.includes(opt.id);
+                  return (
+                    <label key={opt.id} className="flex items-center gap-2 text-xs">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) =>
+                          setReferenceProjectIds((prev) =>
+                            e.target.checked
+                              ? [...prev, opt.id]
+                              : prev.filter((id) => id !== opt.id),
+                          )
+                        }
+                        data-testid={`rfp-reference-${opt.id}`}
+                      />
+                      <span className="truncate">
+                        {opt.title}
+                        {opt.clientName ? ` (${opt.clientName})` : ''}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </label>
         <input
           ref={inputRef}
           type="file"
